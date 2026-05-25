@@ -64,7 +64,7 @@ DB_PORT="5432"
 MQTT_USER=""          # leave empty for anonymous (LAN-only) or set for auth
 MQTT_PASS=""
 
-ADMIN_PASS="change-admin-password-please"
+# Auth — SSO from a parent portal (no local password). See docs/DEV_LOGIN.md.
 
 # ====== Packages ======
 sudo apt update
@@ -110,10 +110,15 @@ cd anpr/backend/database
 PGPASSWORD=${DB_APP_PASS} psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_APP_USER} \
   -d ${DB_NAME} -f schema.sql
 
-# Apply your strong admin password (the seed password 'admin123' is dev-only).
-ADMIN_HASH=$(php -r "echo password_hash('${ADMIN_PASS}', PASSWORD_BCRYPT);")
-PGPASSWORD=${DB_APP_PASS} psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_APP_USER} \
-  -d ${DB_NAME} -c "UPDATE users SET password_hash='${ADMIN_HASH}' WHERE username='admin';"
+# Apply any pending migrations (these are idempotent — safe to re-run):
+for m in /tmp/anpr/backend/database/migrations/*.sql; do
+  PGPASSWORD=${DB_APP_PASS} psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_APP_USER} \
+    -d ${DB_NAME} -f "$m"
+done
+
+# Auth note: the platform uses SSO from a parent portal (no local passwords).
+# Local users are auto-created as shadow rows on first successful SSO login.
+# In dev, set `auth.dev_bypass = true` in config.php — see docs/DEV_LOGIN.md.
 ```
 
 > The PHP backend needs the `pdo_pgsql` extension. The `php-pgsql` apt package
@@ -145,6 +150,21 @@ Configure the database connection in `config/config.php`:
 'auth' => [
     'secret'    => 'GENERATE-A-LONG-RANDOM-STRING-HERE',   // openssl rand -hex 32
     'token_ttl' => 86400 * 7,
+    'dev_bypass' => false,                                 // MUST be false in production
+    'parent_db' => [
+        'driver'      => 'mysql',                          // or 'pgsql' — match the parent
+        'host'        => '<parent platform DB host>',
+        'port'        => 3306,
+        'name'        => '<parent platform DB name>',
+        'user'        => '<read-only user>',
+        'password'    => '<password>',
+        'table'       => 'tbl_users',                      // adjust to real parent schema
+        'col_id'      => 'id',
+        'col_uname'   => 'username',
+        'col_display' => 'full_name',
+        'col_role'    => 'role',
+        'col_active'  => 'is_active',
+    ],
 ],
 'app' => [
     'debug' => false,                    // IMPORTANT: turn off in prod
@@ -296,7 +316,10 @@ sudo chown -R www-data:www-data /var/www/anpr_frontend
 
 Dashboard is now reachable at `http://anpr.yourcompany.local/app/`.
 
-Login: `admin` + the password you set in §4.1.
+Login: authenticated via SSO from the parent portal — the portal opens the
+dashboard with `?username=<user>` appended. For first-time setup or smoke
+testing before the parent is wired, enable dev bypass per
+[`DEV_LOGIN.md`](./DEV_LOGIN.md) and visit `?username=admin`.
 
 ### 4.6 Initial configuration via the dashboard
 

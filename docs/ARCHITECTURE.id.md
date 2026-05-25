@@ -262,11 +262,12 @@ denied_entry  (decision=fail)     6  (Self-test)
 - `GET/POST /api/visits`, `GET /api/visits/summary`, `POST /api/visits/record-exit`
 - `GET/POST/PUT/DELETE /api/vip`
 - `GET/PUT /api/settings`
-- `GET /api/operation-log`
+- `GET /api/operation-log` — jejak audit (bisa difilter actor/action/status/tanggal/cari)
+- `GET /api/operation-log/facets` — daftar actor + action unik untuk dropdown filter
 - `GET /api/events/stream` — Server-Sent Events untuk update UI realtime
 - `POST /api/cron/tick` — sweep timeout UVIS + watchdog reset
 - `GET /api/mqtt-queue/pending`, `POST /api/mqtt-queue/{id}/sent`, `POST /api/mqtt-queue/{id}/failed`
-- `POST /api/auth/login`, `GET /api/auth/me`
+- `POST /api/auth/sso`, `GET /api/auth/me` — login SSO (lihat [`DEV_LOGIN.id.md`](./DEV_LOGIN.id.md))
 
 ## 10. Topik MQTT
 

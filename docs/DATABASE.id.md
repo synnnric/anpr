@@ -271,15 +271,24 @@ Keunikan komposit: `(audio_index, language)`.
 
 ### 10. Auth — `users`
 
+Platform melakukan autentikasi via SSO dari portal induk (lihat
+[`DEV_LOGIN.id.md`](./DEV_LOGIN.id.md)). Tabel ini menyimpan **shadow rows** —
+satu baris per username yang pernah dilihat oleh endpoint SSO. Shadow row
+menjadi source-of-truth untuk role + atribusi token; kolom `password_hash`
+tetap ada (untuk memenuhi NOT NULL) tetapi diisi nilai acak yang tidak dapat
+ditebak karena user SSO tidak pernah login dengan password.
+
 | Kolom | Tipe | Catatan |
 |---|---|---|
-| `username` | VARCHAR(64) UNIQUE | |
-| `password_hash` | VARCHAR(255) NOT NULL | bcrypt (`$2y$…`) |
-| `display_name` | VARCHAR(128) | |
-| `role` | `user_role` | `admin` · `operator` · `viewer` |
-| `enabled` | SMALLINT 0/1 | |
+| `username` | VARCHAR(64) UNIQUE | Mencerminkan username portal induk |
+| `password_hash` | VARCHAR(255) NOT NULL | Acak untuk user SSO — tidak pernah diverifikasi |
+| `display_name` | VARCHAR(128) | Disinkron dari induk pada setiap login |
+| `role` | `user_role` | `admin` · `operator` · `viewer` — dipetakan dari peran induk |
+| `enabled` | SMALLINT 0/1 | Diset 1 pada setiap SSO sukses; 0 untuk mengunci |
 
-Seed awal `admin` / `admin123` (di-hash bcrypt di dalam skema).
+Baris di-upsert oleh `AuthController::sso` pada setiap login sukses. Dengan
+`auth.dev_bypass = true` di `config.php`, username apa pun membuat baris
+dengan `role = 'admin'` (memudahkan pengembangan lokal).
 
 ### 11. Konfigurasi — `settings`
 
@@ -301,20 +310,36 @@ Penyimpanan key/value sederhana. Hot-reload oleh worker setiap 10 detik.
 
 Log append-only dari setiap aksi platform — baik keputusan otomatis maupun
 intervensi manual operator. Memberi tenaga pada tab "Operations" pada detail
-inspeksi.
+inspeksi dan halaman **Log Audit** di sidebar (Diagnostik → Log Audit).
 
 | Kolom | Tipe | Catatan |
 |---|---|---|
-| `user_id` | INT | NULL untuk aksi yang dimulai sistem |
+| `actor_username` | VARCHAR(64) | Username SSO yang memicu aksi. NULL untuk aksi sistem (cron, dorongan keputusan, callback inbound S300). |
 | `channel_no` | VARCHAR(32) | |
 | `inspection_id` | BIGINT | |
-| `action` | VARCHAR(64) NOT NULL | `come`, `auto_decision`, `open_blocker`, `blocker_close`, `send_backup_audio`, `auto_leave`, `manual_reset`, `emergency_stop`, `reset_watchdog`, `whitelist_enqueue_add`, … |
+| `action` | VARCHAR(64) NOT NULL | Lihat katalog aksi di bawah |
 | `request_payload`, `response_payload` | JSONB | Kedua sisi pemanggilan |
 | `status` | `op_status` | `success` · `failed` |
 | `error_message` | TEXT | Diisi saat gagal |
 
-Indeks pada `(user_id)`, `(channel_no)`, `(inspection_id)`, `(action)`,
+Indeks pada `(actor_username)`, `(channel_no)`, `(inspection_id)`, `(action)`,
 `(created_at)` — setiap drill-down umum memiliki indeks.
+
+> **Catatan migrasi**: Tabel ini sebelumnya memiliki kolom `user_id INT`.
+> Diubah menjadi `actor_username VARCHAR(64)` agar username SSO menjadi kunci
+> audit (tanpa juggling user-id internal). Skrip migrasi:
+> `backend/database/migrations/2026-05-25_oplog_actor_username.sql`.
+
+#### Katalog aksi (tidak lengkap)
+
+| Kategori | Aksi |
+|---|---|
+| Auth | `auth.sso_login` |
+| Channels | `channel.create`, `channel.update`, `channel.delete` |
+| Settings | `settings.update` |
+| Plat VIP | `vip.create`, `vip.update`, `vip.delete` |
+| S300 (operator) | `come`, `come_vip_bypass`, `capture`, `leave`, `read_work_status`, `emergency_stop`, `manual_reset`, `audio_prompt`, `video_playback` |
+| S300 (sistem) | `auto_decision`, `open_blocker`, `blocker_close`, `send_backup_audio`, `auto_leave`, `reset_watchdog`, `whitelist_enqueue_add` |
 
 ---
 
@@ -407,7 +432,8 @@ constraint:
 
 ## Data seed yang di-insert pada first run
 
-- Satu user `admin` (password `admin123`, segera ubah di production)
+- Satu shadow user `admin` (tidak ada password yang dapat dipakai — SSO satu-
+  satunya jalur login; lihat [`DEV_LOGIN.id.md`](./DEV_LOGIN.id.md))
 - Baris `settings` default untuk nama platform, broker MQTT, flag auto-start,
   delay close blocker
 - Satu starter `channel` `RJ001` (entry)

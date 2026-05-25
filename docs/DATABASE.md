@@ -266,15 +266,23 @@ Composite uniqueness: `(audio_index, language)`.
 
 ### 10. Auth — `users`
 
+The platform authenticates via SSO from a parent portal (see [`DEV_LOGIN.md`](./DEV_LOGIN.md)).
+This table holds **shadow rows** — one per username the SSO endpoint has seen.
+The shadow row is the source of truth for role + token attribution; the
+`password_hash` column is kept (to satisfy NOT NULL) but is filled with an
+unguessable random value because SSO users never log in with a password.
+
 | Column | Type | Notes |
 |---|---|---|
-| `username` | VARCHAR(64) UNIQUE | |
-| `password_hash` | VARCHAR(255) NOT NULL | bcrypt (`$2y$…`) |
-| `display_name` | VARCHAR(128) | |
-| `role` | `user_role` | `admin` · `operator` · `viewer` |
-| `enabled` | SMALLINT 0/1 | |
+| `username` | VARCHAR(64) UNIQUE | Mirrors the parent platform's username |
+| `password_hash` | VARCHAR(255) NOT NULL | Random for SSO users — never verified |
+| `display_name` | VARCHAR(128) | Mirrored from parent on each login |
+| `role` | `user_role` | `admin` · `operator` · `viewer` — mapped from parent role |
+| `enabled` | SMALLINT 0/1 | Set to 1 on every successful SSO; 0 to lock out |
 
-Seeded with `admin` / `admin123` (bcrypt-hashed in the schema).
+Rows are upserted by `AuthController::sso` on every successful login. With
+`auth.dev_bypass = true` in `config.php`, any username creates a row with
+`role = 'admin'` (handy for local dev).
 
 ### 11. Configuration — `settings`
 
@@ -295,20 +303,37 @@ Simple key/value store. Hot-reloaded by the worker every 10s.
 ### 12. Audit trail — `operation_log`
 
 Append-only log of every platform action — both auto-decisions and manual
-operator interventions. Powers the inspection-detail "Operations" tab.
+operator interventions. Powers the inspection-detail "Operations" tab and the
+top-level **Audit Log** page (Diagnostics → Audit Log).
 
 | Column | Type | Notes |
 |---|---|---|
-| `user_id` | INT | NULL for system-initiated actions |
+| `actor_username` | VARCHAR(64) | The SSO username that triggered the action. NULL for system-initiated actions (cron, decision pushes, S300 inbound callbacks). |
 | `channel_no` | VARCHAR(32) | |
 | `inspection_id` | BIGINT | |
-| `action` | VARCHAR(64) NOT NULL | `come`, `auto_decision`, `open_blocker`, `blocker_close`, `send_backup_audio`, `auto_leave`, `manual_reset`, `emergency_stop`, `reset_watchdog`, `whitelist_enqueue_add`, … |
+| `action` | VARCHAR(64) NOT NULL | See action catalog below |
 | `request_payload`, `response_payload` | JSONB | Both sides of the call |
 | `status` | `op_status` | `success` · `failed` |
 | `error_message` | TEXT | Populated on failure |
 
-Indexes on `(user_id)`, `(channel_no)`, `(inspection_id)`, `(action)`, `(created_at)` —
-every common drill-down has an index.
+Indexes on `(actor_username)`, `(channel_no)`, `(inspection_id)`, `(action)`,
+`(created_at)` — every common drill-down has an index.
+
+> **Migration note**: This table used to have a `user_id INT` column. It was
+> renamed to `actor_username VARCHAR(64)` so SSO usernames are the audit key
+> (no internal user-id juggling). Migration script:
+> `backend/database/migrations/2026-05-25_oplog_actor_username.sql`.
+
+#### Action catalog (non-exhaustive)
+
+| Category | Actions |
+|---|---|
+| Auth | `auth.sso_login` |
+| Channels | `channel.create`, `channel.update`, `channel.delete` |
+| Settings | `settings.update` |
+| VIP plates | `vip.create`, `vip.update`, `vip.delete` |
+| S300 (operator) | `come`, `come_vip_bypass`, `capture`, `leave`, `read_work_status`, `emergency_stop`, `manual_reset`, `audio_prompt`, `video_playback` |
+| S300 (system) | `auto_decision`, `open_blocker`, `blocker_close`, `send_backup_audio`, `auto_leave`, `reset_watchdog`, `whitelist_enqueue_add` |
 
 ---
 
@@ -400,7 +425,8 @@ The relationship map below is therefore implicit, not constraint-enforced:
 
 ## Seed data inserted on first run
 
-- One `admin` user (password `admin123`, change immediately in production)
+- One `admin` shadow user (no usable password — SSO is the only login path;
+  see [`DEV_LOGIN.md`](./DEV_LOGIN.md))
 - Default `settings` rows for platform name, MQTT broker, auto-start flags,
   blocker close delay
 - One starter `channel` `RJ001` (entry)

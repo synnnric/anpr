@@ -28,11 +28,8 @@ Dokumen pendamping:
 
 - [ ] Ubah `auth.secret` di `config/config.php` menjadi string acak 64 karakter baru. Membatalkan token dev.
 - [ ] Ubah `app.debug` ke `false` di `config/config.php` agar stack trace tidak bocor.
-- [ ] Set password Postgres `admin` (tabel `users`) ke nilai non-default:
-      ```sql
-      UPDATE users SET password_hash = '<bcrypt password baru>' WHERE username='admin';
-      ```
-- [ ] Buat akun operator/viewer yang benar-benar dibutuhkan tim Anda (Administration → Users).
+- [ ] Setel `auth.dev_bypass` ke `false` di `config/config.php` dan isi `auth.parent_db` dengan kredensial DB portal induk + pemetaan kolom. Lihat [`DEV_LOGIN.id.md`](./DEV_LOGIN.id.md) untuk referensi pemetaan skema.
+- [ ] Konfirmasi login SSO bekerja end-to-end dari portal induk: meng-klik tautan platform dari UI induk harus mendarat di dashboard dengan badge role yang benar, tanpa perlu parameter `?username=` manual.
 - [ ] Verifikasi `settings.auto_start_s300 = 1` jika Anda ingin worker memicu inspeksi secara otomatis pada deteksi plat (kebanyakan instalasi begitu).
 - [ ] Verifikasi `settings.blocker_auto_close_sec` sesuai dengan waktu traversal gerbang Anda (default 8 dtk; tingkatkan untuk gerbang yang lebih lambat).
 

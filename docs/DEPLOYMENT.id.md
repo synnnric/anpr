@@ -65,7 +65,7 @@ DB_PORT="5432"
 MQTT_USER=""          # kosongkan untuk anonymous (LAN-only) atau set untuk auth
 MQTT_PASS=""
 
-ADMIN_PASS="ganti-password-admin-ini"
+# Auth — SSO dari portal induk (tidak ada password lokal). Lihat docs/DEV_LOGIN.id.md.
 
 # ====== Paket ======
 sudo apt update
@@ -111,10 +111,15 @@ cd anpr/backend/database
 PGPASSWORD=${DB_APP_PASS} psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_APP_USER} \
   -d ${DB_NAME} -f schema.sql
 
-# Terapkan password admin yang kuat (password seed 'admin123' hanya untuk dev).
-ADMIN_HASH=$(php -r "echo password_hash('${ADMIN_PASS}', PASSWORD_BCRYPT);")
-PGPASSWORD=${DB_APP_PASS} psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_APP_USER} \
-  -d ${DB_NAME} -c "UPDATE users SET password_hash='${ADMIN_HASH}' WHERE username='admin';"
+# Terapkan migrasi yang tertunda (idempoten — aman dijalankan ulang):
+for m in /tmp/anpr/backend/database/migrations/*.sql; do
+  PGPASSWORD=${DB_APP_PASS} psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_APP_USER} \
+    -d ${DB_NAME} -f "$m"
+done
+
+# Catatan auth: platform menggunakan SSO dari portal induk (tidak ada password
+# lokal). User lokal dibuat otomatis sebagai shadow row pada login SSO pertama.
+# Di dev, setel `auth.dev_bypass = true` di config.php — lihat docs/DEV_LOGIN.id.md.
 ```
 
 > Backend PHP butuh extension `pdo_pgsql`. Paket apt `php-pgsql` menginstall
@@ -146,6 +151,21 @@ Konfigurasi koneksi database di `config/config.php`:
 'auth' => [
     'secret'    => 'BUAT-STRING-PANJANG-RANDOM-DI-SINI',   // openssl rand -hex 32
     'token_ttl' => 86400 * 7,
+    'dev_bypass' => false,                                 // WAJIB false di produksi
+    'parent_db' => [
+        'driver'      => 'mysql',                          // atau 'pgsql' — sesuai induk
+        'host'        => '<host DB portal induk>',
+        'port'        => 3306,
+        'name'        => '<nama DB portal induk>',
+        'user'        => '<user read-only>',
+        'password'    => '<password>',
+        'table'       => 'tbl_users',                      // sesuaikan ke skema induk
+        'col_id'      => 'id',
+        'col_uname'   => 'username',
+        'col_display' => 'full_name',
+        'col_role'    => 'role',
+        'col_active'  => 'is_active',
+    ],
 ],
 'app' => [
     'debug' => false,                    // PENTING: matikan di produksi
@@ -297,7 +317,10 @@ sudo chown -R www-data:www-data /var/www/anpr_frontend
 
 Dashboard sekarang dapat diakses di `http://anpr.perusahaananda.local/app/`.
 
-Login: `admin` + password yang Anda set di §4.1.
+Login: diautentikasi via SSO dari portal induk — portal membuka dashboard dengan
+`?username=<user>` di URL. Untuk setup awal atau smoke test sebelum portal
+induk tersambung, aktifkan dev bypass sesuai [`DEV_LOGIN.id.md`](./DEV_LOGIN.id.md)
+dan kunjungi `?username=admin`.
 
 ### 4.6 Konfigurasi Awal lewat Dashboard
 

@@ -28,11 +28,8 @@ Companion docs:
 
 - [ ] Change `auth.secret` in `config/config.php` to a fresh 64-char random string. Invalidates the dev tokens.
 - [ ] Flip `app.debug` to `false` in `config/config.php` so stack traces don't leak.
-- [ ] Set Postgres `admin` password (`users` table) to something non-default:
-      ```sql
-      UPDATE users SET password_hash = '<bcrypt of new password>' WHERE username='admin';
-      ```
-- [ ] Create the operator/viewer accounts your team actually needs (Administration → Users).
+- [ ] Set `auth.dev_bypass` to `false` in `config/config.php` and fill in `auth.parent_db` with the parent portal's DB credentials + column mapping. See [`DEV_LOGIN.md`](./DEV_LOGIN.md) for the schema-mapping reference.
+- [ ] Confirm SSO login works end-to-end from the parent portal: clicking the platform link in the parent UI should land on the dashboard with the right role badge, no manual `?username=` parameter required.
 - [ ] Verify `settings.auto_start_s300 = 1` if you want the worker to auto-trigger inspections on plate detection (most installs do).
 - [ ] Verify `settings.blocker_auto_close_sec` matches your gate's traversal time (default 8s; bump for slower gates).
 
