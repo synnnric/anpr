@@ -1,0 +1,29 @@
+[Unit]
+Description=ANPR MQTT Worker — auto-trigger /come on plate detection (Python)
+Documentation=file:/opt/anpr-worker/README.md
+After=network-online.target mosquitto.service mariadb.service apache2.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=anpr
+Group=anpr
+WorkingDirectory=/opt/anpr-worker
+EnvironmentFile=-/opt/anpr-worker/.env
+# Use the virtualenv created during deploy (see README)
+ExecStart=/opt/anpr-worker/.venv/bin/python /opt/anpr-worker/worker.py
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=anpr-mqtt-worker
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/anpr-worker
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+@reference "./index.css";
+
+/* Custom utility classes for form inputs */
+.input-sm {
+  @apply bg-surface-dark border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary-light;
+}
+
+.btn-ptz {
+  @apply flex items-center justify-center p-3 bg-surface-light border border-border rounded-lg text-text-secondary transition-colors disabled:opacity-50;
+}
+
+.btn-ptz:hover:not(:disabled) {
+  @apply border-primary-light/50 bg-surface text-text-primary;
+}
