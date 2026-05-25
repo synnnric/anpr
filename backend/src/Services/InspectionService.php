@@ -86,7 +86,7 @@ class InspectionService {
 
     public static function logOperation(array $log): int {
         return Database::insert('operation_log', [
-            'user_id' => $log['user_id'] ?? null,
+            'actor_username' => $log['actor_username'] ?? null,
             'channel_no' => $log['channel_no'] ?? null,
             'inspection_id' => $log['inspection_id'] ?? null,
             'action' => $log['action'],

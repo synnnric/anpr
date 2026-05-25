@@ -4,6 +4,7 @@ namespace App\Controllers;
 use App\Core\Database;
 use App\Core\Request;
 use App\Core\Response;
+use App\Services\InspectionService;
 
 class AuthController {
     // POST /api/auth/sso  body: { username }
@@ -11,7 +12,7 @@ class AuthController {
     // Exchanges a parent-platform username (passed via the ?username= query param
     // by the embedding portal) for our session token. The local `users` table is
     // the source of truth for roles and audit attribution — SSO upserts a shadow
-    // row so the rest of the codebase (operation_log.user_id, /me, role gates)
+    // row so the rest of the codebase (operation_log.actor_username, /me, role gates)
     // works unchanged.
     public function sso(Request $req) {
         $body = $req->json();
@@ -80,6 +81,13 @@ class AuthController {
             'SELECT id, username, display_name, role, enabled, created_at FROM users WHERE id = ?',
             [$userId]
         );
+        InspectionService::logOperation([
+            'actor_username' => $username,
+            'action' => 'auth.sso_login',
+            'request_payload' => ['username' => $username, 'dev_bypass' => $devBypass],
+            'response_payload' => ['role' => $role, 'user_id' => $userId],
+            'status' => 'success',
+        ]);
         return ['code' => 200, 'message' => 'success', 'data' => ['user' => $user, 'token' => $token]];
     }
 
@@ -97,6 +105,15 @@ class AuthController {
         $b64 = self::b64url(json_encode($payload));
         $sig = self::b64url(hash_hmac('sha256', $b64, $cfg['secret'], true));
         return $b64 . '.' . $sig;
+    }
+
+    // Resolves the bearer-token holder to a username for audit logging.
+    // Returns null when the token is missing/invalid or the user vanished.
+    public static function usernameFromRequest(Request $req): ?string {
+        $uid = self::userIdFromToken($req->header('authorization'));
+        if (!$uid) return null;
+        $row = Database::fetchOne('SELECT username FROM users WHERE id = ?', [$uid]);
+        return $row['username'] ?? null;
     }
 
     public static function userIdFromToken(?string $auth): ?int {

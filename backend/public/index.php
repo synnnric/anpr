@@ -130,9 +130,10 @@ $s = new SettingsController();
 $router->get('/api/settings', fn($r) => $s->index($r));
 $router->put('/api/settings', fn($r) => $s->update($r));
 
-// === Operation log ===
+// === Operation log (audit) ===
 $ol = new OperationLogController();
-$router->get('/api/operation-log', fn($r) => $ol->index($r));
+$router->get('/api/operation-log',        fn($r) => $ol->index($r));
+$router->get('/api/operation-log/facets', fn($r) => $ol->facets($r));
 
 // === Auth (SSO-only — login is brokered by the parent platform via ?username=) ===
 $auth = new AuthController();

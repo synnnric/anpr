@@ -230,7 +230,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- ============================================
 CREATE TABLE IF NOT EXISTS operation_log (
     id               BIGSERIAL PRIMARY KEY,
-    user_id          INT,
+    actor_username   VARCHAR(64),
     channel_no       VARCHAR(32),
     inspection_id    BIGINT,
     action           VARCHAR(64) NOT NULL,
@@ -240,7 +240,7 @@ CREATE TABLE IF NOT EXISTS operation_log (
     error_message    TEXT,
     created_at       TIMESTAMP NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_oplog_user      ON operation_log (user_id);
+CREATE INDEX IF NOT EXISTS idx_oplog_actor     ON operation_log (actor_username);
 CREATE INDEX IF NOT EXISTS idx_oplog_channel   ON operation_log (channel_no);
 CREATE INDEX IF NOT EXISTS idx_oplog_insp      ON operation_log (inspection_id);
 CREATE INDEX IF NOT EXISTS idx_oplog_action    ON operation_log (action);

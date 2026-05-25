@@ -23,9 +23,10 @@ class S300Controller {
         return [new S300Client($channel['s300_base_url']), $channel];
     }
 
-    private static function callAndLog(string $action, string $channelNo, callable $call, ?array $reqPayload = null, ?int $inspectionId = null): array {
+    private static function callAndLog(string $action, string $channelNo, callable $call, ?array $reqPayload = null, ?int $inspectionId = null, ?string $actor = null): array {
         $result = $call();
         InspectionService::logOperation([
+            'actor_username' => $actor,
             'channel_no' => $channelNo,
             'inspection_id' => $inspectionId,
             'action' => $action,
@@ -42,6 +43,7 @@ class S300Controller {
         $channelNo = $req->param('channelNo');
         $plate = trim((string)$req->input('licensePlateNo', ''));
         $force = (bool)$req->input('force', false);
+        $actor = AuthController::usernameFromRequest($req);
         if ($plate === '') {
             Response::error('licensePlateNo required', 400);
             return;
@@ -71,6 +73,7 @@ class S300Controller {
                 }
             }
             InspectionService::logOperation([
+                'actor_username' => $actor,
                 'channel_no' => $channelNo,
                 'inspection_id' => $id,
                 'action' => 'come_vip_bypass',
@@ -158,7 +161,7 @@ class S300Controller {
 
         $result = self::callAndLog('come', $channelNo, function () use ($client, $channelNo, $plate) {
             return $client->post("/api/v1/channel-s300/come/$channelNo", ['licensePlateNo' => $plate]);
-        }, ['licensePlateNo' => $plate], $inspectionId);
+        }, ['licensePlateNo' => $plate], $inspectionId, $actor);
 
         Response::json([
             'code' => $result['ok'] ? 200 : ($result['status'] ?: 500),
@@ -174,12 +177,13 @@ class S300Controller {
     // GET /api/s300/capture/{channelNo}
     public function capture(Request $req): void {
         $channelNo = $req->param('channelNo');
+        $actor = AuthController::usernameFromRequest($req);
         [$client] = self::clientForChannel($channelNo);
         $inspection = InspectionService::findActiveInspection($channelNo);
 
         $result = self::callAndLog('capture', $channelNo, function () use ($client, $channelNo) {
             return $client->get("/api/v1/channel-s300/capture/$channelNo");
-        }, null, $inspection['id'] ?? null);
+        }, null, $inspection['id'] ?? null, $actor);
 
         Response::json([
             'code' => $result['ok'] ? 200 : ($result['status'] ?: 500),
@@ -191,12 +195,13 @@ class S300Controller {
     // GET /api/s300/leave/{channelNo}
     public function leave(Request $req): void {
         $channelNo = $req->param('channelNo');
+        $actor = AuthController::usernameFromRequest($req);
         [$client] = self::clientForChannel($channelNo);
         $inspection = InspectionService::findActiveInspection($channelNo);
 
         $result = self::callAndLog('leave', $channelNo, function () use ($client, $channelNo) {
             return $client->get("/api/v1/channel-s300/leave/$channelNo");
-        }, null, $inspection['id'] ?? null);
+        }, null, $inspection['id'] ?? null, $actor);
 
         if ($inspection && $result['ok']) {
             Database::update('inspections', [
@@ -215,12 +220,13 @@ class S300Controller {
     // POST /api/s300/read-work-status/{channelNo}
     public function readWorkStatus(Request $req): void {
         $channelNo = $req->param('channelNo');
+        $actor = AuthController::usernameFromRequest($req);
         [$client] = self::clientForChannel($channelNo);
         $inspection = InspectionService::findActiveInspection($channelNo);
 
         $result = self::callAndLog('read_work_status', $channelNo, function () use ($client, $channelNo) {
             return $client->post("/api/v1/device-s300/read-work-status/$channelNo");
-        }, null, $inspection['id'] ?? null);
+        }, null, $inspection['id'] ?? null, $actor);
 
         Response::json([
             'code' => $result['ok'] ? 200 : ($result['status'] ?: 500),
@@ -232,12 +238,13 @@ class S300Controller {
     // POST /api/s300/emergency-stop/{channelNo}
     public function emergencyStop(Request $req): void {
         $channelNo = $req->param('channelNo');
+        $actor = AuthController::usernameFromRequest($req);
         [$client] = self::clientForChannel($channelNo);
         $inspection = InspectionService::findActiveInspection($channelNo);
 
         $result = self::callAndLog('emergency_stop', $channelNo, function () use ($client, $channelNo) {
             return $client->post("/api/v1/device-s300/emergency-stop/$channelNo");
-        }, null, $inspection['id'] ?? null);
+        }, null, $inspection['id'] ?? null, $actor);
 
         if ($inspection && $result['ok']) {
             Database::update('inspections', ['state' => 'emergency_stop'], 'id = :id', ['id' => $inspection['id']]);
@@ -253,12 +260,13 @@ class S300Controller {
     // POST /api/s300/manual-reset/{channelNo}
     public function manualReset(Request $req): void {
         $channelNo = $req->param('channelNo');
+        $actor = AuthController::usernameFromRequest($req);
         [$client] = self::clientForChannel($channelNo);
         $inspection = InspectionService::findActiveInspection($channelNo);
 
         $result = self::callAndLog('manual_reset', $channelNo, function () use ($client, $channelNo) {
             return $client->post("/api/v1/device-s300/manual-reset/$channelNo");
-        }, null, $inspection['id'] ?? null);
+        }, null, $inspection['id'] ?? null, $actor);
 
         Response::json([
             'code' => $result['ok'] ? 200 : ($result['status'] ?: 500),
@@ -272,6 +280,7 @@ class S300Controller {
         $body = $req->json();
         $channelNo = $body['channelNo'] ?? null;
         $data = $body['data'] ?? [];
+        $actor = AuthController::usernameFromRequest($req);
         if (!$channelNo || !is_array($data) || empty($data)) {
             Response::error('channelNo and data[] required', 400);
             return;
@@ -282,7 +291,7 @@ class S300Controller {
         $payload = ['cmdNo' => 335, 'data' => $data];
         $result = self::callAndLog('audio_prompt', $channelNo, function () use ($client, $payload) {
             return $client->post('/api/v1/device-s300/audio-prompt', $payload);
-        }, $payload);
+        }, $payload, null, $actor);
 
         if ($result['ok']) {
             foreach ($data as $item) {
@@ -315,6 +324,7 @@ class S300Controller {
         $channelNo = $body['channelNo'] ?? null;
         $startTime = $body['startTime'] ?? null;
         $endTime = $body['endTime'] ?? null;
+        $actor = AuthController::usernameFromRequest($req);
         if (!$channelNo || !$startTime || !$endTime) {
             Response::error('channelNo, startTime, endTime required', 400);
             return;
@@ -325,7 +335,7 @@ class S300Controller {
         $payload = compact('channelNo', 'startTime', 'endTime');
         $result = self::callAndLog('video_playback', $channelNo, function () use ($client, $payload) {
             return $client->post('/api/v1/device-s300/video-playback', $payload);
-        }, $payload);
+        }, $payload, null, $actor);
 
         Response::json([
             'code' => $result['ok'] ? 200 : ($result['status'] ?: 500),
