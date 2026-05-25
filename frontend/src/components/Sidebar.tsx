@@ -1,7 +1,7 @@
 import {
   Camera, Settings, Activity, Shield, Radio, MessageSquare,
   Wifi, WifiOff, Loader2, Columns3, ShieldCheck, Car, LayoutDashboard,
-  type LucideIcon,
+  History, type LucideIcon,
 } from 'lucide-react';
 import { useMqtt } from '../contexts/MqttContext';
 import { useI18n } from '../contexts/I18nContext';
@@ -59,6 +59,7 @@ const NAV_GROUPS: NavGroup[] = [
     titleKey: 'nav.group.diagnostics',
     items: [
       { id: 'mqtt-logs', labelKey: 'nav.mqtt_logs', icon: Radio },
+      { id: 'audit-log', labelKey: 'nav.audit_log', icon: History },
     ],
   },
 ];

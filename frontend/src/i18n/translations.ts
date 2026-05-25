@@ -106,6 +106,7 @@ const id = {
   'nav.visits': 'Kunjungan & Laporan',
   'nav.roadblocker': 'Kontrol Penghalang',
   'nav.mqtt_logs': 'Log MQTT',
+  'nav.audit_log': 'Log Audit',
 
   // StatusBar
   'statusbar.devices': 'Perangkat',
@@ -118,6 +119,32 @@ const id = {
   // SSO blocked-access screen (shown when no ?username= param and no valid token)
   'sso.blocked.title': 'Akses Ditolak',
   'sso.blocked.hint': 'Silakan akses platform ini melalui portal utama. Sesi tidak ditemukan.',
+
+  // AuditLogPage
+  'audit.title': 'Log Audit',
+  'audit.subtitle': 'Riwayat tindakan pengguna dan operasi sistem. Aktor `system` menandakan tindakan otomatis (cron, dorongan keputusan, dll).',
+  'audit.filter.search': 'Cari',
+  'audit.filter.search_ph': 'aksi / aktor / kanal',
+  'audit.filter.actor': 'Aktor',
+  'audit.filter.action': 'Aksi',
+  'audit.filter.status': 'Status',
+  'audit.filter.since': 'Dari',
+  'audit.filter.until': 'Sampai',
+  'audit.filter.clear': 'Bersihkan',
+  'audit.col.timestamp': 'Waktu',
+  'audit.col.actor': 'Aktor',
+  'audit.col.action': 'Aksi',
+  'audit.col.channel': 'Kanal / Inspeksi',
+  'audit.col.status': 'Status',
+  'audit.status.success': 'Sukses',
+  'audit.status.failed': 'Gagal',
+  'audit.actor.system': 'sistem',
+  'audit.detail.error': 'Pesan kesalahan',
+  'audit.detail.request': 'Request',
+  'audit.detail.response': 'Response',
+  'audit.empty.none': 'Belum ada entri log audit.',
+  'audit.empty.filtered': 'Tidak ada entri yang cocok dengan filter saat ini.',
+  'audit.pagination.summary': 'Menampilkan {start}–{end} dari {total}',
 
   // DashboardPage
   'dashboard.title': 'Dasbor',
@@ -767,6 +794,7 @@ const en: Record<Key, string> = {
   'nav.visits': 'Visits & Reports',
   'nav.roadblocker': 'Blocker Control',
   'nav.mqtt_logs': 'MQTT Logs',
+  'nav.audit_log': 'Audit Log',
 
   // StatusBar
   'statusbar.devices': 'Devices',
@@ -779,6 +807,32 @@ const en: Record<Key, string> = {
   // SSO blocked-access screen
   'sso.blocked.title': 'Access denied',
   'sso.blocked.hint': 'Please access this platform through the main portal. No active session was found.',
+
+  // AuditLogPage
+  'audit.title': 'Audit Log',
+  'audit.subtitle': 'History of user actions and system operations. Actor `system` denotes automated activity (cron, decision pushes, etc).',
+  'audit.filter.search': 'Search',
+  'audit.filter.search_ph': 'action / actor / channel',
+  'audit.filter.actor': 'Actor',
+  'audit.filter.action': 'Action',
+  'audit.filter.status': 'Status',
+  'audit.filter.since': 'From',
+  'audit.filter.until': 'Until',
+  'audit.filter.clear': 'Clear',
+  'audit.col.timestamp': 'Time',
+  'audit.col.actor': 'Actor',
+  'audit.col.action': 'Action',
+  'audit.col.channel': 'Channel / Inspection',
+  'audit.col.status': 'Status',
+  'audit.status.success': 'Success',
+  'audit.status.failed': 'Failed',
+  'audit.actor.system': 'system',
+  'audit.detail.error': 'Error message',
+  'audit.detail.request': 'Request',
+  'audit.detail.response': 'Response',
+  'audit.empty.none': 'No audit-log entries yet.',
+  'audit.empty.filtered': 'No entries match the current filters.',
+  'audit.pagination.summary': 'Showing {start}–{end} of {total}',
 
   // DashboardPage
   'dashboard.title': 'Dashboard',

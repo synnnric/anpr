@@ -16,6 +16,7 @@ import S300InspectionPage from './pages/S300InspectionPage';
 import VisitsPage from './pages/VisitsPage';
 import MqttLogsPage from './pages/MqttLogsPage';
 import DashboardPage from './pages/DashboardPage';
+import AuditLogPage from './pages/AuditLogPage';
 
 function BlockedAccess() {
   const { error } = useAuth();
@@ -69,6 +70,7 @@ function AuthGate() {
             {activePage === 's300' && <S300InspectionPage />}
             {activePage === 'visits' && <VisitsPage />}
             {activePage === 'mqtt-logs' && <MqttLogsPage />}
+            {activePage === 'audit-log' && <AuditLogPage />}
           </main>
         </div>
       </div>
