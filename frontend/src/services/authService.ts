@@ -41,8 +41,12 @@ async function getWithToken<T>(path: string, token: string): Promise<T> {
   return json.data;
 }
 
-export const login = (username: string, password: string) =>
-  postJson<LoginResponse>('/api/auth/login', { username, password });
+// Exchanges a parent-platform username (carried in the ?username= query param)
+// for our own session token. Backend either:
+//   - dev mode (AUTH_DEV_BYPASS=1): accepts any username, returns a fake admin
+//   - prod: looks the username up in the parent platform's DB and issues a token
+export const ssoLogin = (username: string) =>
+  postJson<LoginResponse>('/api/auth/sso', { username });
 
 export const fetchMe = (token: string) =>
   getWithToken<AuthUser>('/api/auth/me', token);

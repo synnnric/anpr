@@ -94,7 +94,6 @@ const id = {
   'nav.group.s300': 'Lengan Robot Kamera',
   'nav.group.rb': 'Penghalang Jalan',
   'nav.group.diagnostics': 'Diagnostik',
-  'nav.group.admin': 'Administrasi',
 
   'nav.dashboard': 'Dashboard',
   'nav.recognition': 'Pengenalan Plat',
@@ -107,7 +106,6 @@ const id = {
   'nav.visits': 'Kunjungan & Laporan',
   'nav.roadblocker': 'Kontrol Penghalang',
   'nav.mqtt_logs': 'Log MQTT',
-  'nav.users': 'Pengguna',
 
   // StatusBar
   'statusbar.devices': 'Perangkat',
@@ -117,15 +115,9 @@ const id = {
   'statusbar.not_connected': 'Tidak Terhubung',
   'statusbar.lang': 'Bahasa',
 
-  // LoginPage
-  'login.username.label': 'Username',
-  'login.password.label': 'Kata sandi',
-  'login.username.placeholder': 'admin',
-  'login.password.placeholder': '••••••••',
-  'login.error.required': 'Username dan kata sandi wajib diisi',
-  'login.error.failed': 'Gagal masuk',
-  'login.submit': 'Masuk',
-  'login.submitting': 'Sedang masuk...',
+  // SSO blocked-access screen (shown when no ?username= param and no valid token)
+  'sso.blocked.title': 'Akses Ditolak',
+  'sso.blocked.hint': 'Silakan akses platform ini melalui portal utama. Sesi tidak ditemukan.',
 
   // DashboardPage
   'dashboard.title': 'Dasbor',
@@ -668,46 +660,6 @@ const id = {
   'mqtt_logs.last_error': 'Galat terakhir:',
   'mqtt_logs.plate_filter_title': 'Filter semua log MQTT untuk {p}',
 
-  // UsersPage
-  'users.title': 'Manajemen Pengguna',
-  'users.subtitle': 'Buat, nonaktifkan, dan reset kata sandi untuk akun platform. Khusus admin.',
-  'users.new': 'Pengguna Baru',
-  'users.col.id': 'ID',
-  'users.col.username': 'Username',
-  'users.col.display_name': 'Nama Tampilan',
-  'users.col.role': 'Peran',
-  'users.col.status': 'Status',
-  'users.col.created': 'Dibuat',
-  'users.you': '(Anda)',
-  'users.role.admin': 'Admin',
-  'users.role.operator': 'Operator',
-  'users.role.viewer': 'Viewer',
-  'users.role.admin_desc': 'Admin — kontrol penuh termasuk manajemen pengguna',
-  'users.role.operator_desc': 'Operator — intervensi manual diperbolehkan',
-  'users.role.viewer_desc': 'Viewer — hanya baca',
-  'users.status.active': 'AKTIF',
-  'users.status.disabled': 'NONAKTIF',
-  'users.action.reset_pw': 'Reset kata sandi',
-  'users.action.delete_self': 'Tidak bisa menghapus diri sendiri',
-  'users.action.delete': 'Hapus pengguna',
-  'users.confirm_delete': 'Hapus pengguna "{username}" secara permanen? Tindakan ini tidak dapat dibatalkan.',
-  'users.empty': 'Belum ada pengguna.',
-  'users.toast.created': 'Pengguna dibuat',
-  'users.toast.role_change': '{username} → {role}',
-  'users.toast.enabled': '{username} diaktifkan',
-  'users.toast.disabled': '{username} dinonaktifkan',
-  'users.toast.deleted': '{username} dihapus',
-  'users.toast.pw_reset': 'Kata sandi direset untuk {username}',
-  'users.modal.new_title': 'Pengguna Baru',
-  'users.modal.reset_title': 'Reset kata sandi — {username}',
-  'users.modal.reset_hint': 'Kata sandi baru berlaku saat login berikutnya. Sesi yang ada tetap valid sampai token-nya kedaluwarsa.',
-  'users.field.username': 'Username',
-  'users.field.display_name': 'Nama Tampilan (opsional)',
-  'users.field.password': 'Kata sandi (min 6 karakter)',
-  'users.field.role': 'Peran',
-  'users.field.new_password': 'Kata sandi baru (min 6 karakter)',
-  'users.btn.create': 'Buat',
-  'users.btn.set_password': 'Atur Kata Sandi',
 } as const;
 
 type Key = keyof typeof id;
@@ -803,7 +755,6 @@ const en: Record<Key, string> = {
   'nav.group.s300': 'Camera Robotic Arm',
   'nav.group.rb': 'Road Blocker',
   'nav.group.diagnostics': 'Diagnostics',
-  'nav.group.admin': 'Administration',
 
   'nav.dashboard': 'Dashboard',
   'nav.recognition': 'Recognition',
@@ -816,7 +767,6 @@ const en: Record<Key, string> = {
   'nav.visits': 'Visits & Reports',
   'nav.roadblocker': 'Blocker Control',
   'nav.mqtt_logs': 'MQTT Logs',
-  'nav.users': 'Users',
 
   // StatusBar
   'statusbar.devices': 'Devices',
@@ -826,15 +776,9 @@ const en: Record<Key, string> = {
   'statusbar.not_connected': 'Not Connected',
   'statusbar.lang': 'Language',
 
-  // LoginPage
-  'login.username.label': 'Username',
-  'login.password.label': 'Password',
-  'login.username.placeholder': 'admin',
-  'login.password.placeholder': '••••••••',
-  'login.error.required': 'Username and password are required',
-  'login.error.failed': 'Login failed',
-  'login.submit': 'Sign in',
-  'login.submitting': 'Signing in...',
+  // SSO blocked-access screen
+  'sso.blocked.title': 'Access denied',
+  'sso.blocked.hint': 'Please access this platform through the main portal. No active session was found.',
 
   // DashboardPage
   'dashboard.title': 'Dashboard',
@@ -1377,46 +1321,6 @@ const en: Record<Key, string> = {
   'mqtt_logs.last_error': 'Last error:',
   'mqtt_logs.plate_filter_title': 'Filter all MQTT logs for {p}',
 
-  // UsersPage
-  'users.title': 'User Management',
-  'users.subtitle': 'Create, disable, and reset passwords for platform accounts. Admin-only.',
-  'users.new': 'New user',
-  'users.col.id': 'ID',
-  'users.col.username': 'Username',
-  'users.col.display_name': 'Display name',
-  'users.col.role': 'Role',
-  'users.col.status': 'Status',
-  'users.col.created': 'Created',
-  'users.you': '(you)',
-  'users.role.admin': 'Admin',
-  'users.role.operator': 'Operator',
-  'users.role.viewer': 'Viewer',
-  'users.role.admin_desc': 'Admin — full control incl. user management',
-  'users.role.operator_desc': 'Operator — manual interventions allowed',
-  'users.role.viewer_desc': 'Viewer — read-only',
-  'users.status.active': 'ACTIVE',
-  'users.status.disabled': 'DISABLED',
-  'users.action.reset_pw': 'Reset password',
-  'users.action.delete_self': "Can't delete yourself",
-  'users.action.delete': 'Delete user',
-  'users.confirm_delete': 'Permanently delete user "{username}"? This cannot be undone.',
-  'users.empty': 'No users yet.',
-  'users.toast.created': 'User created',
-  'users.toast.role_change': '{username} → {role}',
-  'users.toast.enabled': '{username} enabled',
-  'users.toast.disabled': '{username} disabled',
-  'users.toast.deleted': '{username} deleted',
-  'users.toast.pw_reset': 'Password reset for {username}',
-  'users.modal.new_title': 'New user',
-  'users.modal.reset_title': 'Reset password — {username}',
-  'users.modal.reset_hint': 'The new password takes effect on next login. Existing sessions remain valid until their token expires.',
-  'users.field.username': 'Username',
-  'users.field.display_name': 'Display name (optional)',
-  'users.field.password': 'Password (min 6 chars)',
-  'users.field.role': 'Role',
-  'users.field.new_password': 'New password (min 6 chars)',
-  'users.btn.create': 'Create',
-  'users.btn.set_password': 'Set password',
 };
 
 export const translations = { id, en } as const;

@@ -1,0 +1,20 @@
+RewriteEngine On
+RewriteBase /anpr_backend/
+
+# Pass the Authorization header through to PHP. Apache + mod_php strip it by
+# default for CGI security; without this, every Bearer-token endpoint (/me etc.)
+# returns 401 even when the token is valid.
+RewriteCond %{HTTP:Authorization} ^(.+)$
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
+
+# Direct access to uploads
+RewriteCond %{REQUEST_URI} ^/anpr_backend/uploads/
+RewriteRule .* - [L]
+
+# Route everything else into public/index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ public/index.php [QSA,L]
+
+# If accessed at the project root index, hand to public
+DirectoryIndex public/index.php

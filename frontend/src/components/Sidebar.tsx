@@ -1,10 +1,9 @@
 import {
   Camera, Settings, Activity, Shield, Radio, MessageSquare,
   Wifi, WifiOff, Loader2, Columns3, ShieldCheck, Car, LayoutDashboard,
-  Users, type LucideIcon,
+  type LucideIcon,
 } from 'lucide-react';
 import { useMqtt } from '../contexts/MqttContext';
-import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import type { TKey } from '../i18n/translations';
 
@@ -64,19 +63,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-// Admin-only nav group, appended dynamically inside the component.
-const ADMIN_GROUP: NavGroup = {
-  titleKey: 'nav.group.admin',
-  items: [
-    { id: 'users', labelKey: 'nav.users', icon: Users },
-  ],
-};
-
 export default function Sidebar({ activePage, onNavigate }: SidebarProps) {
   const { status, deviceSn } = useMqtt();
-  const { user } = useAuth();
   const { t } = useI18n();
-  const navGroups = user?.role === 'admin' ? [...NAV_GROUPS, ADMIN_GROUP] : NAV_GROUPS;
+  const navGroups = NAV_GROUPS;
 
   const statusLabel =
     status === 'connected' ? t('common.connected') :

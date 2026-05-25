@@ -1,31 +1,73 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { fetchMe, login as loginApi, type AuthUser } from '../services/authService';
+import { fetchMe, ssoLogin, type AuthUser } from '../services/authService';
+
+type AuthStatus = 'unknown' | 'authenticated' | 'unauthenticated' | 'blocked';
 
 interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
-  status: 'unknown' | 'authenticated' | 'unauthenticated';
-  login: (username: string, password: string) => Promise<void>;
+  status: AuthStatus;
+  error: string | null;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const TOKEN_KEY = 'anpr_auth_token';
+const PARAM_NAME = 'username';
+
+function readUsernameParam(): string | null {
+  const u = new URLSearchParams(window.location.search).get(PARAM_NAME);
+  return u && u.trim() ? u.trim() : null;
+}
+
+function stripUsernameParam() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has(PARAM_NAME)) return;
+  url.searchParams.delete(PARAM_NAME);
+  window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
-  const [status, setStatus] = useState<'unknown' | 'authenticated' | 'unauthenticated'>('unknown');
+  const [status, setStatus] = useState<AuthStatus>('unknown');
+  const [error, setError] = useState<string | null>(null);
 
-  // On mount or whenever token changes: validate it by hitting /me.
-  // Bad/expired tokens land us in 'unauthenticated' which forces the login screen.
+  // First-load decision tree:
+  //   1. If ?username=… is in the URL, exchange it for a session token (overrides any stored token).
+  //   2. Else, if a token is in localStorage, validate it via /me.
+  //   3. Else, we're "blocked" — caller must arrive through the parent platform.
   useEffect(() => {
     let cancelled = false;
+    const paramUsername = readUsernameParam();
+
+    if (paramUsername) {
+      ssoLogin(paramUsername)
+        .then(res => {
+          if (cancelled) return;
+          localStorage.setItem(TOKEN_KEY, res.token);
+          setToken(res.token);
+          setUser(res.user);
+          setStatus('authenticated');
+          setError(null);
+          stripUsernameParam();
+        })
+        .catch(err => {
+          if (cancelled) return;
+          localStorage.removeItem(TOKEN_KEY);
+          setToken(null);
+          setUser(null);
+          setStatus('blocked');
+          setError((err as Error).message || 'SSO failed');
+        });
+      return () => { cancelled = true; };
+    }
+
     if (!token) {
-      setUser(null);
-      setStatus('unauthenticated');
+      setStatus('blocked');
       return;
     }
+
     fetchMe(token)
       .then(u => { if (!cancelled) { setUser(u); setStatus('authenticated'); } })
       .catch(() => {
@@ -33,28 +75,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem(TOKEN_KEY);
         setToken(null);
         setUser(null);
-        setStatus('unauthenticated');
+        setStatus('blocked');
       });
     return () => { cancelled = true; };
-  }, [token]);
-
-  const login = useCallback(async (username: string, password: string) => {
-    const res = await loginApi(username, password);
-    localStorage.setItem(TOKEN_KEY, res.token);
-    setUser(res.user);
-    setToken(res.token);
-    setStatus('authenticated');
+    // We intentionally only run this once on mount — `token` is read via the initializer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setUser(null);
-    setStatus('unauthenticated');
+    setStatus('blocked');
+    setError(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, status, login, logout }}>
+    <AuthContext.Provider value={{ user, token, status, error, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -31,6 +31,13 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# ── Backend runtime (logs, uploads, real config with secrets) ─────────
+backend/logs/*
+!backend/logs/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/config/config.php
+
 # ── PDFs (protocol specs — distributed separately) ────────────────────
 *.pdf
 
