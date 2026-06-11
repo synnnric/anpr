@@ -13,6 +13,8 @@
   the parent-platform DB lookup for production.
 - [`DEVICE_SETUP_CHECKLIST.md`](./DEVICE_SETUP_CHECKLIST.md) — Tick-box
   checklist for bringing real hardware online (cameras, robotic arm, blocker).
+- [`DEVICE_DEBUG_GUIDE.md`](./DEVICE_DEBUG_GUIDE.md) — Debug every device in
+  isolation, bottom-up, with copy-paste probes; cross-check behavior vs docs.
 - [`DEPLOYMENT.md`](./DEPLOYMENT.md) — Step-by-step Ubuntu production deployment,
   hardware checklist, backups, monitoring, troubleshooting.
 
@@ -29,6 +31,8 @@
   menyambungkan lookup DB portal induk untuk produksi.
 - [`DEVICE_SETUP_CHECKLIST.id.md`](./DEVICE_SETUP_CHECKLIST.id.md) — Checklist
   tick-box untuk membawa hardware sungguhan online (kamera, robot, blocker).
+- [`DEVICE_DEBUG_GUIDE.id.md`](./DEVICE_DEBUG_GUIDE.id.md) — Debug tiap perangkat
+  secara terisolasi, dari bawah ke atas, dengan probe siap-tempel; cek perilaku vs dokumen.
 - [`DEPLOYMENT.id.md`](./DEPLOYMENT.id.md) — Deployment produksi Ubuntu langkah
   demi langkah, checklist hardware, backup, monitoring, troubleshooting.
 

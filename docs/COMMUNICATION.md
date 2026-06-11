@@ -13,7 +13,7 @@ in which direction, and what payload it carries. Read this alongside
 | Entry ANPR camera (RJ001) | MQTT (pub/sub) | Mosquitto :1883 | `sn = 265e1040-85e01fb7` |
 | Exit ANPR camera (RJ002)  | MQTT (pub/sub) | Mosquitto :1883 | `sn = EXIT-CAM-001` |
 | S300 inspection robot     | HTTP (both directions) | platform :80 + s300 :8086 | `channel_no = RJ001`, `s300_base_url` |
-| Road blocker              | TCP socket     | rb_ip : rb_port | `rb_device_no`, `rb_board_id` |
+| Road blocker              | HTTP REST      | rb_ip : rb_port | `rb_device_no`, `rb_board_id` |
 | Python worker             | MQTT + HTTP    | broker :1883 + backend :80 | one per platform |
 | Frontend (browser tab)    | HTTP + MQTT WS | backend :80 + broker :8083 | one per user |
 
@@ -100,10 +100,12 @@ mark the inspection completed — the platform waits for `reset-complete`.
 
 ## Road Blocker
 
-Raw **TCP socket** to `rb_ip:rb_port`, with the device's `rb_board_id` +
-`rb_device_no` + `rb_column_num` framed inside each request. Called only by
-the backend's `RoadBlockerService` from `DecisionExecutor` when the decision is
-PASS / SUSPECT / VIP_PASS. No subscribe side — fire-and-forget.
+**HTTP REST** to `http://rb_ip:rb_port` (`POST /open/operation`,
+`GET /open/getStatus/{deviceNo}`), with the device's `rb_board_id` +
+`rb_device_no` + `rb_column_num` carried in the JSON body. Called only by
+the backend's `RoadBlockerClient` from `DecisionExecutor` when the decision is
+PASS / SUSPECT / VIP_PASS. Backend only ever LOWERS (opens); raising is the
+hardware's decision (`blocker_close_mode='hardware'`). See `ROAD BLOCKER API.pdf`.
 
 Each `channels` row carries everything needed:
 
@@ -195,7 +197,7 @@ closed.
 5. backend.DecisionEngine sees UVIS arrive → decides pass / suspect / fail
    └─ DecisionExecutor branches:
       pass / suspect / vip_pass:
-        ├─ TCP open road blocker                       (rb_ip:rb_port)
+        ├─ HTTP POST open road blocker  /open/operation (rb_ip:rb_port)
         ├─ INSERT mqtt_outbound_queue                  (white_list_operator → exit cam, add)
         └─ HTTP GET /leave/{ch}                        (release vehicle)
       fail:

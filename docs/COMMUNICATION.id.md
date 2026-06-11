@@ -14,7 +14,7 @@ komponen tingkat tinggi.
 | Kamera ANPR Entry (RJ001) | MQTT (pub/sub) | Mosquitto :1883 | `sn = 265e1040-85e01fb7` |
 | Kamera ANPR Exit (RJ002)  | MQTT (pub/sub) | Mosquitto :1883 | `sn = EXIT-CAM-001` |
 | Robot Inspeksi S300       | HTTP (dua arah) | platform :80 + s300 :8086 | `channel_no = RJ001`, `s300_base_url` |
-| Road blocker              | TCP socket | rb_ip : rb_port | `rb_device_no`, `rb_board_id` |
+| Road blocker              | HTTP REST | rb_ip : rb_port | `rb_device_no`, `rb_board_id` |
 | Python worker             | MQTT + HTTP | broker :1883 + backend :80 | satu per platform |
 | Frontend (browser tab)    | HTTP + MQTT WS | backend :80 + broker :8083 | satu per pengguna |
 
@@ -102,11 +102,13 @@ menandai inspeksi sebagai selesai — platform menunggu `reset-complete`.
 
 ## Road Blocker
 
-**TCP socket** mentah ke `rb_ip:rb_port`, dengan `rb_board_id` +
-`rb_device_no` + `rb_column_num` perangkat dibingkai di dalam setiap request.
-Dipanggil hanya oleh `RoadBlockerService` backend dari `DecisionExecutor` saat
-keputusannya PASS / SUSPECT / VIP_PASS. Tidak ada sisi subscribe —
-fire-and-forget.
+**HTTP REST** ke `http://rb_ip:rb_port` (`POST /open/operation`,
+`GET /open/getStatus/{deviceNo}`), dengan `rb_board_id` + `rb_device_no` +
+`rb_column_num` perangkat dibawa di dalam body JSON. Dipanggil hanya oleh
+`RoadBlockerClient` backend dari `DecisionExecutor` saat keputusannya
+PASS / SUSPECT / VIP_PASS. Backend hanya MENURUNKAN (membuka); menaikkan adalah
+keputusan perangkat keras (`blocker_close_mode='hardware'`). Lihat
+`ROAD BLOCKER API.pdf`.
 
 Setiap baris `channels` membawa semua yang diperlukan:
 
@@ -199,7 +201,7 @@ ditutup.
 5. backend.DecisionEngine melihat UVIS tiba → memutuskan pass / suspect / fail
    └─ DecisionExecutor bercabang:
       pass / suspect / vip_pass:
-        ├─ buka road blocker via TCP                   (rb_ip:rb_port)
+        ├─ buka road blocker via HTTP POST /open/operation (rb_ip:rb_port)
         ├─ INSERT mqtt_outbound_queue                  (white_list_operator → kamera exit, add)
         └─ HTTP GET /leave/{ch}                        (lepaskan kendaraan)
       fail:
