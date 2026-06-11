@@ -71,3 +71,6 @@ export default defineConfig([
   },
 ])
 ```
+
+
+http://localhost:5173/?username=admin

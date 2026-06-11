@@ -25,6 +25,7 @@ use App\Controllers\VisitsController;
 use App\Controllers\MqttQueueController;
 use App\Controllers\MqttLogController;
 use App\Controllers\DashboardController;
+use App\Controllers\AdminController;
 
 // ===== CORS =====
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
@@ -139,6 +140,10 @@ $router->get('/api/operation-log/facets', fn($r) => $ol->facets($r));
 $auth = new AuthController();
 $router->post('/api/auth/sso', fn($r) => $auth->sso($r));
 $router->get ('/api/auth/me',  fn($r) => $auth->me($r));
+
+// === Admin / testing utilities (gated to debug/dev_bypass) ===
+$admin = new AdminController();
+$router->post('/api/admin/reset-data', fn($r) => $admin->resetData($r));
 
 // === Event stream (SSE) ===
 $es = new EventStreamController();

@@ -372,7 +372,11 @@ INSERT INTO settings (key_name, value) VALUES
     ('vip_plates', ''),
     ('auto_start_s300', '0'),
     ('auto_start_channel', 'RJ001'),
-    ('blocker_auto_close_sec', '8')
+    ('blocker_auto_close_sec', '8'),
+    -- Road-blocker close ownership: 'hardware' (controller raises itself via its
+    -- loop detector — safe default) or 'backend_timer' (legacy software-timed
+    -- raise; crush risk, only for controllers with no self-close).
+    ('blocker_close_mode', 'hardware')
 ON CONFLICT (key_name) DO NOTHING;
 
 INSERT INTO channels (channel_no, s300_base_url, name, enabled, kind)

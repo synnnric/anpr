@@ -304,3 +304,55 @@ Frontend subscribes to `/api/events/stream`. Each event has a `type` field:
 | S300 unreachable mid-inspection | UVIS never arrives → 30s timeout → decision=fail → back-up TTS attempted (also fails) → auto-leave attempt (fails) → watchdog 30s later force-completes the inspection → channel free | Automatic via cron tick |
 | Road blocker unreachable | Decision still made; `open_blocker` action logged as failed; vehicle stuck — operator alert needed | Manual: dashboard "Emergency Stop" + physical intervention |
 | Exit camera whitelist mismatch | Vehicles get stuck at exit | Use the worker logs + visits page to find the plate; manually add via MQTT command in DB queue |
+
+## 13. Platform vs hardware responsibility
+
+Design principle: **the platform owns decisioning and authorization** (what is allowed,
+what the verdict is); **the hardware owns the physical motions that carry safety risk**
+(when it is safe to move a barrier). The platform never commands a movement whose safety
+depends on real-time vehicle presence — that judgement belongs to the device's own
+loop detector / controller.
+
+### Actions initiated by the PLATFORM (backend + worker)
+
+| Action | Target | Code path | Trigger |
+|---|---|---|---|
+| Start inspection (`come`) | S300 | `S300Controller::come` | plate detected → worker → `/api/s300/come` |
+| Capture / read-work-status | S300 | `S300Controller` | inspection flow |
+| Leave / auto-leave | S300 | `DecisionExecutor::autoLeave` | after every decision |
+| Emergency stop, manual reset | S300 | `S300Controller` | manual operator action |
+| Audio prompt / back-up audio on FAIL | S300 | `DecisionExecutor::sendBackUpAudio` | flow / FAIL verdict |
+| **Road blocker LOWER** (open, `down`) | Road blocker | `DecisionExecutor::openBlocker` | PASS / SUSPECT / VIP verdict |
+| Road blocker RAISE (close, `up`) | Road blocker | `CronController::tick` | **legacy `blocker_close_mode = backend_timer` only** — off by default |
+| Whitelist add / delete | Exit ANPR camera | `MqttOutbound` → worker MQTT publish | entry PASS (add) / after exit (delete) |
+| Verdict pass/suspect/fail/vip | — (logic) | `DecisionEngine::evaluate` | UVIS result or timeout |
+| Timeout sweep / reset watchdog | — (logic) | `CronController::tick` | worker every 5 s |
+| Visit bookkeeping, audit log, MQTT log | — (DB) | various | events |
+
+### Actions the HARDWARE performs on its own (platform not in the loop)
+
+| Action | Device | Notes |
+|---|---|---|
+| Decide *when* to recognize a plate (loop detector / video trigger) | ANPR camera | `triggerType` in `ivs_result` |
+| Emit `ivs_result`, `keep_alive`, `gpio_in`, `barr_gate_status` | ANPR camera | pushed autonomously; platform only logs/consumes |
+| **Open the EXIT barrier on a whitelist match** (own relay) | Exit ANPR camera | platform only pre-authorized the plate via `white_list_operator` |
+| **RAISE the road blocker once the vehicle clears** (self-close) | Road blocker controller | default `blocker_close_mode = hardware`; loop detector decides |
+| Crush-safety interlock (refuse to raise while a vehicle is present) | Road blocker controller | lives in the 485/controller layer — not exposed via its REST API |
+| Close the entry/exit barrier (loop / timer) | Gate controller | controller's own logic |
+| Run the full inspection cycle (arm motion, UVIS scan, `operating_state` 0–6) | S300 | platform only says *start* and *leave*; S300 sequences itself and pushes callbacks |
+| Physical reset after `leave` → `reset-complete` callback | S300 | platform has a 30 s watchdog fallback only |
+
+### Mental model per barrier
+
+- **Entry road blocker** — platform OPENS (only it knows the verdict); hardware CLOSES (safety).
+- **Exit barrier** — hardware OPENS (whitelist match) and CLOSES (loop/timer); platform only pre-authorizes.
+- **S300** — platform says "start" and "leave"; the hardware does the entire physical cycle in between.
+
+### Deployment prerequisites (wiring/config — verify before go-live)
+
+1. **Road blocker self-close** only happens if the controller is wired/configured to
+   auto-raise via its loop detector (Qigong/485 configuration). Until that is confirmed,
+   the lane stays open after a pass — or temporarily set
+   `settings.blocker_close_mode = 'backend_timer'` (crush risk; see DEVICE_SETUP_CHECKLIST).
+2. **Exit-barrier auto-open** requires the exit camera to be in **Whitelist mode** with
+   its relay wired to the gate controller.

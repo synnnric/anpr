@@ -349,7 +349,9 @@ def mqtt_outbound_loop() -> None:
                     "name": command,
                     "version": "1.0",
                     "timestamp": int(time.time()),
-                    "payload": {"body": payload},
+                    # payload.type is required by the camera protocol (e.g. §7.8); it
+                    # mirrors the command name, same as the top-level `name` field.
+                    "payload": {"type": command, "body": payload},
                 }
                 try:
                     info = State.mqtt_client.publish(topic, json.dumps(envelope), qos=0)
@@ -372,8 +374,12 @@ def mqtt_outbound_loop() -> None:
 # MQTT callbacks
 # ============================================================================
 def on_connect(client, userdata, flags, reason_code, properties=None):
-    # paho v1.x passes an int rc; v2.x passes a ReasonCode object — int() works for both
-    rc = int(reason_code) if reason_code is not None else 0
+    # paho v1.x passes an int rc; v2.x passes a ReasonCode object whose numeric
+    # code lives in .value (int() is NOT supported on ReasonCode).
+    if reason_code is None:
+        rc = 0
+    else:
+        rc = int(getattr(reason_code, "value", reason_code))
     if rc != 0:
         log.error("MQTT connect failed rc=%s", rc)
         return

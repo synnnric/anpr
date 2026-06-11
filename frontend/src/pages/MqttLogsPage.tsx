@@ -2,12 +2,14 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Radio, RefreshCw, ArrowDownToLine, ArrowUpFromLine, ChevronRight,
   ChevronDown, Cpu, Activity, AlertTriangle, CheckCircle, Clock, Car, X,
+  Trash2, Loader2,
 } from 'lucide-react';
 import {
   listMqttDevices, listMqttInbound, listMqttOutbound, listMqttMessageNames,
   type MqttDevice, type MqttInboundRow, type MqttOutboundRow, type MqttLogFilters,
   type MqttMessageNames,
 } from '../services/mqttLogService';
+import { resetData } from '../services/adminService';
 import { parsePgTs, fmtPgTs } from '../utils/helpers';
 import { useI18n } from '../contexts/I18nContext';
 
@@ -32,6 +34,10 @@ export default function MqttLogsPage() {
   const [messageNames, setMessageNames] = useState<MqttMessageNames>({ inbound: [], outbound: [], all: [] });
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const filters: MqttLogFilters = useMemo(() => ({
     device_sn:     deviceFilter || undefined,
@@ -78,6 +84,21 @@ export default function MqttLogsPage() {
 
   const dropdownNames = tab === 'inbound' ? messageNames.inbound : messageNames.outbound;
 
+  const handleReset = async () => {
+    setResetting(true);
+    setResetMsg(null);
+    try {
+      const r = await resetData();
+      setResetMsg({ ok: true, text: t('mqtt_logs.reset.success', { n: r.total }) });
+      setResetOpen(false);
+      reload();
+    } catch (err) {
+      setResetMsg({ ok: false, text: t('mqtt_logs.reset.failed', { e: err instanceof Error ? err.message : String(err) }) });
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const toggle = (key: string) => setExpanded(e => ({ ...e, [key]: !e[key] }));
   const applyPlate = () => setPlateFilter(plateInput.trim());
   const clearPlate = () => { setPlateInput(''); setPlateFilter(''); };
@@ -106,9 +127,54 @@ export default function MqttLogsPage() {
               className="flex items-center gap-1 px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary border border-border rounded-md">
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> {t('common.refresh')}
             </button>
+            <button onClick={() => { setResetMsg(null); setResetOpen(true); }}
+              title={t('mqtt_logs.reset.testing_only')}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs text-danger hover:bg-danger/10 border border-danger/40 rounded-md">
+              <Trash2 className="w-3.5 h-3.5" /> {t('mqtt_logs.reset.btn')}
+            </button>
           </div>
         </div>
       </header>
+
+      {resetMsg && (
+        <div className={`px-6 py-2 text-xs border-b ${
+          resetMsg.ok ? 'bg-success/10 text-success border-success/30' : 'bg-danger/10 text-danger border-danger/30'
+        }`}>
+          {resetMsg.text}
+        </div>
+      )}
+
+      {resetOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => !resetting && setResetOpen(false)}>
+          <div className="bg-surface border border-border rounded-xl max-w-md w-full p-5 shadow-xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-9 h-9 rounded-full bg-danger/15 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-danger" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary">{t('mqtt_logs.reset.confirm_title')}</h3>
+                <span className="inline-block mt-1 text-[10px] uppercase tracking-wide font-semibold text-warning bg-warning/10 border border-warning/30 rounded px-1.5 py-0.5">
+                  {t('mqtt_logs.reset.testing_only')}
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-text-secondary leading-relaxed mb-4">{t('mqtt_logs.reset.confirm_body')}</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setResetOpen(false)} disabled={resetting}
+                className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary border border-border rounded-md disabled:opacity-50">
+                {t('mqtt_logs.reset.cancel')}
+              </button>
+              <button onClick={handleReset} disabled={resetting}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white bg-danger hover:bg-danger/80 rounded-md disabled:opacity-50">
+                {resetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                {t('mqtt_logs.reset.confirm_yes')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         <div>

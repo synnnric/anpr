@@ -23,19 +23,23 @@ class MqttOutbound {
      * Used to authorise an exit plate after a successful entry.
      */
     public static function whitelistAdd(string $exitCameraSn, string $licensePlate, ?string $context = null): int {
+        // Schema per MQTT protocol §7.8: operator_type=update_or_add, dldb_rec is a
+        // single object (not an array), create_time required, need_alarm=0 means whitelist.
+        $now = date('Y-m-d H:i:s');
         return self::enqueue($exitCameraSn, 'white_list_operator', [
-            'operator_type' => 'add',
-            'dldb_rec' => [[
+            'operator_type' => 'update_or_add',
+            'dldb_rec' => [
                 'plate' => $licensePlate,
                 'enable' => 1,
-                'enable_time' => date('Y-m-d H:i:s'),
+                'create_time' => $now,
+                'enable_time' => $now,
                 'overdue_time' => date('Y-m-d H:i:s', time() + 86400 * 30),
-                'need_alarm' => 0,
-                'context' => $context ?? '',
+                'need_alarm' => 0,                       // 0 = whitelist, 1 = blacklist
                 'time_seg_enable' => 0,
                 'seg_time_start' => '00:00:00',
                 'seg_time_end' => '00:00:00',
-            ]],
+                'vehicle_comment' => mb_substr((string)($context ?? ''), 0, 16), // ≤16 chars per spec
+            ],
         ]);
     }
 

@@ -84,55 +84,79 @@ class CronController {
             ];
         }
 
-        // 3) Auto-raise the road blocker after each successful pass. The blocker
-        //    was lowered by DecisionExecutor on PASS/SUSPECT/VIP_PASS so the
-        //    vehicle could drive through; once it's had `blocker_auto_close_sec`
-        //    to clear the area, raise it again for the next vehicle.
-        $closeAfter = (int)(Database::fetchOne(
-            "SELECT value FROM settings WHERE key_name = 'blocker_auto_close_sec'"
-        )['value'] ?? 8);
-        $closeCutoff = gmdate('Y-m-d H:i:s', time() - $closeAfter);
-        $toClose = Database::fetchAll(
-            "SELECT i.*, c.rb_ip, c.rb_port, c.rb_device_no, c.rb_board_id, c.rb_column_num
-             FROM inspections i
-             JOIN channels c ON c.channel_no = i.channel_no
-             WHERE i.blocker_opened = 1
-               AND i.blocker_closed_at IS NULL
-               AND i.blocker_opened_at IS NOT NULL
-               AND i.blocker_opened_at <= ?
-               AND c.rb_ip IS NOT NULL
-               AND c.rb_device_no IS NOT NULL",
-            [$closeCutoff]
-        );
+        // 3) Road-blocker CLOSE (raise) is owned by the HARDWARE controller —
+        //    the backend must not command it.
+        //
+        //    SAFETY: the blocker is a lifting column (rising bollard). Raising it
+        //    on a blind software timer can drive the column up into a vehicle
+        //    that is still passing — a crush hazard. The controller is the only
+        //    component with the loop detector / safety interlock, so it alone
+        //    decides when it is safe to raise. The road-blocker REST API exposes
+        //    no vehicle-present signal and no auto-close toggle (see ROAD BLOCKER
+        //    API.pdf) — that logic is configured at the controller/485 layer.
+        //
+        //    OPENING still comes from the backend (DecisionExecutor) because only
+        //    the platform knows the inspection verdict (PASS/VIP/etc.). But the
+        //    backend never sends the raise.
+        //
+        //    Escape hatch: set blocker_close_mode = 'backend_timer' to restore the
+        //    old software-timed raise — ONLY for controllers that have no hardware
+        //    self-close/loop detector, and only if you accept the crush risk.
         $blockerClosed = [];
-        foreach ($toClose as $insp) {
-            $client = new \App\Services\RoadBlockerClient(
-                (string)$insp['rb_ip'], (int)$insp['rb_port']
+        $closeMode = (string)(Database::fetchOne(
+            "SELECT value FROM settings WHERE key_name = 'blocker_close_mode'"
+        )['value'] ?? 'hardware');
+
+        if ($closeMode === 'backend_timer') {
+            $closeAfter = (int)(Database::fetchOne(
+                "SELECT value FROM settings WHERE key_name = 'blocker_auto_close_sec'"
+            )['value'] ?? 8);
+            $closeCutoff = gmdate('Y-m-d H:i:s', time() - $closeAfter);
+            $toClose = Database::fetchAll(
+                "SELECT i.*, c.rb_ip, c.rb_port, c.rb_device_no, c.rb_board_id, c.rb_column_num
+                 FROM inspections i
+                 JOIN channels c ON c.channel_no = i.channel_no
+                 WHERE i.blocker_opened = 1
+                   AND i.blocker_closed_at IS NULL
+                   AND i.blocker_opened_at IS NOT NULL
+                   AND i.blocker_opened_at <= ?
+                   AND c.rb_ip IS NOT NULL
+                   AND c.rb_device_no IS NOT NULL",
+                [$closeCutoff]
             );
-            $res = $client->closeColumn(
-                (string)$insp['rb_device_no'],
-                (string)$insp['rb_board_id'],
-                (int)$insp['rb_column_num']
-            );
-            Database::update('inspections', [
-                'blocker_closed_at' => $now,
-            ], 'id = :id', ['id' => $insp['id']]);
-            \App\Services\InspectionService::logOperation([
-                'channel_no'   => $insp['channel_no'],
-                'inspection_id'=> $insp['id'],
-                'action'       => 'blocker_close',
-                'request_payload'  => ['board' => $insp['rb_board_id'], 'column' => $insp['rb_column_num']],
-                'response_payload' => ['ok' => $res['ok'], 'elapsed_ms' => $res['elapsed_ms'] ?? null],
-                'status'       => $res['ok'] ? 'success' : 'failed',
-                'error_message'=> $res['ok'] ? null : ($res['error'] ?? "http_{$res['status']}"),
-            ]);
-            $blockerClosed[] = [
-                'inspectionId' => (int)$insp['id'],
-                'plate'        => $insp['license_plate'],
-                'channelNo'    => $insp['channel_no'],
-                'ok'           => $res['ok'],
-            ];
+            foreach ($toClose as $insp) {
+                $client = new \App\Services\RoadBlockerClient(
+                    (string)$insp['rb_ip'], (int)$insp['rb_port']
+                );
+                $res = $client->closeColumn(
+                    (string)$insp['rb_device_no'],
+                    (string)$insp['rb_board_id'],
+                    (int)$insp['rb_column_num']
+                );
+                Database::update('inspections', [
+                    'blocker_closed_at' => $now,
+                ], 'id = :id', ['id' => $insp['id']]);
+                \App\Services\InspectionService::logOperation([
+                    'channel_no'   => $insp['channel_no'],
+                    'inspection_id'=> $insp['id'],
+                    'action'       => 'blocker_close',
+                    'request_payload'  => ['board' => $insp['rb_board_id'], 'column' => $insp['rb_column_num'], 'mode' => 'backend_timer'],
+                    'response_payload' => ['ok' => $res['ok'], 'elapsed_ms' => $res['elapsed_ms'] ?? null],
+                    'status'       => $res['ok'] ? 'success' : 'failed',
+                    'error_message'=> $res['ok'] ? null : ($res['error'] ?? "http_{$res['status']}"),
+                ]);
+                $blockerClosed[] = [
+                    'inspectionId' => (int)$insp['id'],
+                    'plate'        => $insp['license_plate'],
+                    'channelNo'    => $insp['channel_no'],
+                    'ok'           => $res['ok'],
+                    'by'           => 'backend_timer',
+                ];
+            }
         }
+        // else 'hardware' (default): the backend issues no close command; the
+        // controller raises the column itself when its loop detector says it is
+        // safe. blocker_closed_at is left for the controller's reality, not ours.
 
         return ['code' => 200, 'message' => 'success', 'data' => [
             'now' => $now,

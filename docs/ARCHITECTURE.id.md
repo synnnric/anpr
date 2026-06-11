@@ -304,3 +304,55 @@ Frontend subscribe ke `/api/events/stream`. Setiap event punya field `type`:
 | S300 tidak terjangkau di tengah inspeksi | UVIS tidak pernah tiba → timeout 30dtk → decision=fail → coba kirim audio mundur (juga gagal) → coba auto-leave (gagal) → 30dtk kemudian watchdog memaksa selesaikan inspeksi → channel bebas | Otomatis lewat cron tick |
 | Road blocker tidak terjangkau | Keputusan tetap dibuat; aksi `open_blocker` di-log sebagai gagal; kendaraan terjebak — perlu alert operator | Manual: dashboard "Emergency Stop" + intervensi fisik |
 | Mismatch whitelist kamera keluar | Kendaraan terjebak di pintu keluar | Pakai log worker + halaman Visits untuk cari plat; manual add lewat antrian MQTT di DB |
+
+## 13. Tanggung jawab platform vs perangkat keras
+
+Prinsip desain: **platform memegang pengambilan keputusan dan otorisasi** (apa yang
+diizinkan, apa verdict-nya); **perangkat keras memegang gerakan fisik yang membawa risiko
+keselamatan** (kapan aman untuk menggerakkan palang). Platform tidak pernah memerintahkan
+gerakan yang keselamatannya bergantung pada keberadaan kendaraan secara real-time —
+penilaian itu milik loop detector / controller perangkat itu sendiri.
+
+### Aksi yang dimulai oleh PLATFORM (backend + worker)
+
+| Aksi | Target | Jalur kode | Pemicu |
+|---|---|---|---|
+| Mulai inspeksi (`come`) | S300 | `S300Controller::come` | plat terdeteksi → worker → `/api/s300/come` |
+| Capture / read-work-status | S300 | `S300Controller` | alur inspeksi |
+| Leave / auto-leave | S300 | `DecisionExecutor::autoLeave` | setelah setiap keputusan |
+| Emergency stop, manual reset | S300 | `S300Controller` | aksi manual operator |
+| Audio prompt / audio mundur saat FAIL | S300 | `DecisionExecutor::sendBackUpAudio` | alur / verdict FAIL |
+| **Road blocker TURUN** (buka, `down`) | Road blocker | `DecisionExecutor::openBlocker` | verdict PASS / SUSPECT / VIP |
+| Road blocker NAIK (tutup, `up`) | Road blocker | `CronController::tick` | **hanya legacy `blocker_close_mode = backend_timer`** — mati secara default |
+| Whitelist add / delete | Kamera ANPR keluar | `MqttOutbound` → publish MQTT worker | masuk PASS (add) / setelah keluar (delete) |
+| Verdict pass/suspect/fail/vip | — (logika) | `DecisionEngine::evaluate` | hasil UVIS atau timeout |
+| Sapuan timeout / reset watchdog | — (logika) | `CronController::tick` | worker tiap 5 dtk |
+| Pembukuan visit, audit log, log MQTT | — (DB) | berbagai | event |
+
+### Aksi yang dilakukan PERANGKAT KERAS sendiri (platform tidak terlibat)
+
+| Aksi | Perangkat | Catatan |
+|---|---|---|
+| Menentukan *kapan* mengenali plat (loop detector / video trigger) | Kamera ANPR | `triggerType` di `ivs_result` |
+| Mengirim `ivs_result`, `keep_alive`, `gpio_in`, `barr_gate_status` | Kamera ANPR | dikirim otonom; platform hanya log/konsumsi |
+| **Membuka palang KELUAR saat cocok whitelist** (relay sendiri) | Kamera ANPR keluar | platform hanya pra-otorisasi plat via `white_list_operator` |
+| **MENAIKKAN road blocker setelah kendaraan lewat** (tutup sendiri) | Controller road blocker | default `blocker_close_mode = hardware`; loop detector yang memutuskan |
+| Interlock anti-himpit (menolak naik saat ada kendaraan) | Controller road blocker | ada di lapisan 485/controller — tidak diekspos via REST API-nya |
+| Menutup palang masuk/keluar (loop / timer) | Controller gerbang | logika controller sendiri |
+| Menjalankan siklus inspeksi penuh (gerak lengan, scan UVIS, `operating_state` 0–6) | S300 | platform hanya bilang *mulai* dan *leave*; S300 mengurutkan sendiri dan mengirim callback |
+| Reset fisik setelah `leave` → callback `reset-complete` | S300 | platform hanya punya fallback watchdog 30 dtk |
+
+### Model mental per palang
+
+- **Road blocker masuk** — platform MEMBUKA (hanya ia tahu verdict); perangkat keras MENUTUP (keselamatan).
+- **Palang keluar** — perangkat keras MEMBUKA (cocok whitelist) dan MENUTUP (loop/timer); platform hanya pra-otorisasi.
+- **S300** — platform bilang "mulai" dan "leave"; perangkat keras menjalankan seluruh siklus fisik di antaranya.
+
+### Prasyarat deployment (wiring/konfigurasi — verifikasi sebelum go-live)
+
+1. **Tutup-sendiri road blocker** hanya terjadi jika controller di-wiring/konfigurasi untuk
+   naik otomatis via loop detector-nya (konfigurasi Qigong/485). Sampai itu dikonfirmasi,
+   jalur tetap terbuka setelah lolos — atau sementara set
+   `settings.blocker_close_mode = 'backend_timer'` (risiko himpit; lihat DEVICE_SETUP_CHECKLIST).
+2. **Buka-otomatis palang keluar** mensyaratkan kamera keluar dalam mode **Whitelist**
+   dengan relay-nya ter-wiring ke controller gerbang.

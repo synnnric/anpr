@@ -8,11 +8,12 @@ import {
   type AuditLogEntry, type AuditLogFacets, type AuditLogQuery,
 } from '../services/auditLogService';
 import { useI18n } from '../contexts/I18nContext';
+import { actionLabel } from '../utils/actionLabels';
 
 const PAGE_SIZE = 50;
 
 export default function AuditLogPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [rows, setRows] = useState<AuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [facets, setFacets] = useState<AuditLogFacets | null>(null);
@@ -115,7 +116,7 @@ export default function AuditLogPage() {
               className="w-full text-xs px-2 py-1.5 bg-surface-dark border border-border rounded text-text-primary">
               <option value="">{t('common.all')}</option>
               {facets?.actions.map(a => (
-                <option key={a.action} value={a.action}>{a.action} ({a.count})</option>
+                <option key={a.action} value={a.action}>{actionLabel(a.action, lang)} ({a.count})</option>
               ))}
             </select>
           </div>
@@ -202,7 +203,7 @@ export default function AuditLogPage() {
 }
 
 function Row({ row, expanded, onToggle }: { row: AuditLogEntry; expanded: boolean; onToggle: () => void }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const ts = new Date(row.created_at);
   const hasPayload = row.request_payload || row.response_payload || row.error_message;
   return (
@@ -227,7 +228,7 @@ function Row({ row, expanded, onToggle }: { row: AuditLogEntry; expanded: boolea
             <span className="text-text-secondary italic">{t('audit.actor.system')}</span>
           )}
         </td>
-        <td className="px-3 py-2 font-mono text-text-primary">{row.action}</td>
+        <td className="px-3 py-2 text-text-primary" title={row.action}>{actionLabel(row.action, lang)}</td>
         <td className="px-3 py-2 text-text-secondary">
           {row.channel_no ?? <span className="opacity-40">—</span>}
           {row.inspection_id != null && (
