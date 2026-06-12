@@ -20,23 +20,46 @@ N-1 was already green.
 
 ---
 
-## 0. Tooling (install once)
+## 0. Environments & tooling
 
-| Tool | Used for | Get it on Windows |
-|------|----------|-------------------|
-| `curl.exe` | HTTP probes | ships with Windows 10/11 (use `curl.exe`, not the PowerShell alias `curl`) |
-| `mosquitto_pub` / `mosquitto_sub` | MQTT probes | install Mosquitto, adds them to `C:\Program Files\mosquitto\` |
-| `psql` | DB probes | ships with PostgreSQL |
-| `php` | run backend lint / one-off scripts | `C:\xampp\php\php.exe` |
+There are two environments and the commands differ slightly between them:
+
+- **Production — AlmaLinux** (Linux). You run these probes over SSH on the prod
+  box. **All command blocks below are written in bash for AlmaLinux** — that's
+  the environment that talks to the real hardware.
+- **Dev — Windows + XAMPP.** Same probes, same logic, just different shell
+  mechanics. Translate each command with this table:
+
+| Bash (AlmaLinux prod) | Windows dev (PowerShell) |
+|-----------------------|--------------------------|
+| `curl …` | `curl.exe …` (plain `curl` is an `Invoke-WebRequest` alias with different flags) |
+| line continuation `\` | backtick `` ` `` |
+| single-quoted JSON `'{"k":1}'` | double-quoted + escaped `"{\"k\":1}"` |
+| `php` (on `PATH`) | `C:\xampp\php\php.exe` |
+| `worker/.venv/bin/python worker/worker.py` | `worker\.venv\Scripts\python.exe worker\worker.py` |
+| `/etc/.../backend/config/config.php` | `backend\config\config.php` |
+
+Tools you need (install once):
+
+| Tool | AlmaLinux (prod) | Windows (dev) |
+|------|------------------|---------------|
+| `curl` | preinstalled | `curl.exe` ships with Windows 10/11 |
+| `mosquitto_pub` / `mosquitto_sub` | `sudo dnf install -y mosquitto` (the clients ship with the broker package) | install Mosquitto → `C:\Program Files\mosquitto\` |
+| `psql` | `sudo dnf install -y postgresql` | ships with PostgreSQL |
+| `php` | `sudo dnf install -y php-cli` | `C:\xampp\php\php.exe` |
 
 Reference values for this project (from `backend/config/config.php`):
 
 - Backend base URL: `http://127.0.0.1/anpr_backend`
+  (on AlmaLinux this is whatever vhost/alias Apache/nginx serves `backend/public`
+  under — substitute the prod hostname if it isn't `127.0.0.1`)
 - MQTT broker: `127.0.0.1:1883`
 - DB: host `127.0.0.1`, **port `5433`**, db `anpr_s300`, user `anpr`
 
-> Tip: in PowerShell always call `curl.exe` explicitly. Plain `curl` is an alias
-> for `Invoke-WebRequest` and takes different flags.
+> SELinux note (AlmaLinux): if Apache/nginx returns `502`/`permission denied`
+> reaching the worker or the DB, check `getenforce` and the
+> `httpd_can_network_connect` boolean (`sudo setsebool -P httpd_can_network_connect 1`)
+> before blaming the app config.
 
 ---
 
@@ -44,13 +67,13 @@ Reference values for this project (from `backend/config/config.php`):
 
 **Isolate:**
 
-```powershell
+```bash
 psql -h 127.0.0.1 -p 5433 -U anpr -d anpr_s300 -c "SELECT 1;"
 ```
 
 **Expected:** a one-row `?column? = 1`. Then sanity-check the schema:
 
-```powershell
+```bash
 psql -h 127.0.0.1 -p 5433 -U anpr -d anpr_s300 -c "\dt"
 psql -h 127.0.0.1 -p 5433 -U anpr -d anpr_s300 -c "SELECT key_name, value FROM settings;"
 ```
@@ -60,8 +83,10 @@ psql -h 127.0.0.1 -p 5433 -U anpr -d anpr_s300 -c "SELECT key_name, value FROM s
 `hardware`) and `auto_start_s300`.
 
 **Common failures:**
-- `could not connect` → wrong port (it's **5433**, not 5432) or service down.
-- `password authentication failed` → `config.php` and the role disagree.
+- `could not connect` → wrong port (it's **5433**, not 5432) or service down
+  (`sudo systemctl status postgresql` on AlmaLinux).
+- `password authentication failed` → `config.php` and the role disagree, or
+  `pg_hba.conf` isn't set to `md5`/`scram-sha-256` for the `anpr` role.
 
 ---
 
@@ -69,19 +94,19 @@ psql -h 127.0.0.1 -p 5433 -U anpr -d anpr_s300 -c "SELECT key_name, value FROM s
 
 **Isolate (no devices needed):**
 
-```powershell
-curl.exe -s http://127.0.0.1/anpr_backend/api/health
-curl.exe -s http://127.0.0.1/anpr_backend/
+```bash
+curl -s http://127.0.0.1/anpr_backend/api/health
+curl -s http://127.0.0.1/anpr_backend/
 ```
 
 **Expected:** `{"code":200,"message":"ok",...}`. The root returns version + time.
 
 Then prove DB-backed routes work end to end:
 
-```powershell
-curl.exe -s "http://127.0.0.1/anpr_backend/api/settings"
-curl.exe -s "http://127.0.0.1/anpr_backend/api/channels"
-curl.exe -s "http://127.0.0.1/anpr_backend/api/channels/by-no/RJ001/status"
+```bash
+curl -s "http://127.0.0.1/anpr_backend/api/settings"
+curl -s "http://127.0.0.1/anpr_backend/api/channels"
+curl -s "http://127.0.0.1/anpr_backend/api/channels/by-no/RJ001/status"
 ```
 
 **Expected:** `/api/channels/by-no/RJ001/status` returns `{ busy: false }` when the
@@ -93,26 +118,28 @@ source of truth. `docs/COMMUNICATION.md` and `ARCHITECTURE.md` describe these �
 if a documented endpoint 404s, the doc is stale.
 
 **Common failures:**
-- `500` with debug on → exception is printed; read it.
-- `404` on a route that should exist → Apache rewrite/alias for `/anpr_backend`
-  not pointing at `backend/public`.
+- `500` with debug on → exception is printed; read it. On AlmaLinux also tail
+  `sudo journalctl -u httpd` or `/var/log/httpd/error_log`.
+- `404` on a route that should exist → web-server rewrite/alias for
+  `/anpr_backend` not pointing at `backend/public` (check the vhost / `.htaccess`
+  and that `AllowOverride All` is set).
 
 ---
 
 ## 3. MQTT broker (mosquitto)
 
-**Isolate** — open two terminals.
+**Isolate** — open two terminals (two SSH sessions on prod).
 
 Terminal A (subscribe to everything):
 
-```powershell
+```bash
 mosquitto_sub -h 127.0.0.1 -p 1883 -t "device/#" -v
 ```
 
 Terminal B (publish a fake message):
 
-```powershell
-mosquitto_pub -h 127.0.0.1 -p 1883 -t "device/TEST/message/up/keep_alive" -m "{\"hello\":1}"
+```bash
+mosquitto_pub -h 127.0.0.1 -p 1883 -t "device/TEST/message/up/keep_alive" -m '{"hello":1}'
 ```
 
 **Expected:** Terminal A prints the topic + payload instantly. That proves the
@@ -123,13 +150,17 @@ broker routes `device/#` traffic — independent of cameras and worker.
 `.../down/...` + `/reply` counterparts. The topic shape you publish here must
 match those exactly or the worker's subscription filter won't pick real traffic up.
 
+> On AlmaLinux confirm the broker is up and reachable: `sudo systemctl status mosquitto`,
+> and that the firewall allows `1883` if the camera is on another host
+> (`sudo firewall-cmd --add-port=1883/tcp`).
+
 ---
 
 ## 4. ANPR camera — entry (recognition in)
 
 The camera **pushes autonomously**; you don't poll it. Watch its traffic:
 
-```powershell
+```bash
 mosquitto_sub -h 127.0.0.1 -p 1883 -t "device/+/message/up/ivs_result" -v
 ```
 
@@ -140,7 +171,7 @@ path the worker decodes (`worker.py: handle_recognition`).
 
 **Simulate without hardware:**
 
-```powershell
+```bash
 node frontend/simulator.cjs        # entry camera
 node frontend/exit_simulator.cjs   # exit camera
 ```
@@ -163,15 +194,15 @@ Two directions — test each separately.
 **5a. Platform → S300 (outbound).** The backend calls the S300 base URL. Trigger
 it via the platform route:
 
-```powershell
-curl.exe -s -X POST "http://127.0.0.1/anpr_backend/api/s300/come/RJ001" `
-  -H "Content-Type: application/json" -d "{\"licensePlateNo\":\"B1234XYZ\"}"
+```bash
+curl -s -X POST "http://127.0.0.1/anpr_backend/api/s300/come/RJ001" \
+  -H "Content-Type: application/json" -d '{"licensePlateNo":"B1234XYZ"}'
 ```
 
 **Expected:** `code:200` and an inspection row is created. Verify:
 
-```powershell
-curl.exe -s "http://127.0.0.1/anpr_backend/api/inspections?limit=1"
+```bash
+curl -s "http://127.0.0.1/anpr_backend/api/inspections?limit=1"
 ```
 
 To hit the device directly (bypass the platform), curl its own base URL — find it
@@ -183,18 +214,18 @@ etc. The exact paths the platform uses are in `S300Client` calls inside
 `/overseas/s300/*`. Simulate each callback to prove the backend handles them
 without the real device:
 
-```powershell
+```bash
 # work-status: op=1 inspecting
-curl.exe -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/work-status" `
-  -H "Content-Type: application/json" -d "{\"channelNo\":\"RJ001\",\"op\":1}"
+curl -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/work-status" \
+  -H "Content-Type: application/json" -d '{"channelNo":"RJ001","op":1}'
 
 # uvis result: clean
-curl.exe -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/uvis" `
-  -H "Content-Type: application/json" -d "{\"channelNo\":\"RJ001\",\"result\":\"clean\"}"
+curl -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/uvis" \
+  -H "Content-Type: application/json" -d '{"channelNo":"RJ001","result":"clean"}'
 
 # reset-complete
-curl.exe -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/reset-complete" `
-  -H "Content-Type: application/json" -d "{\"channelNo\":\"RJ001\"}"
+curl -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/reset-complete" \
+  -H "Content-Type: application/json" -d '{"channelNo":"RJ001"}'
 ```
 
 **Expected:** the UVIS callback drives `DecisionEngine` → a verdict; check the
@@ -221,8 +252,8 @@ those URLs). The field names (`op`, `result`, etc.) you send here should match
 
 **Isolate — read status (safe, read-only):**
 
-```powershell
-curl.exe -s "http://{rb_ip}:{rb_port}/open/getStatus/{rb_device_no}"
+```bash
+curl -s "http://{rb_ip}:{rb_port}/open/getStatus/{rb_device_no}"
 ```
 
 **Expected:** JSON with a column position code — `01` descending, `03` lowered,
@@ -230,11 +261,11 @@ curl.exe -s "http://{rb_ip}:{rb_port}/open/getStatus/{rb_device_no}"
 
 **Isolate — operate (moves hardware; clear the lane first):**
 
-```powershell
+```bash
 # LOWER (open) the column — vehicle can pass
-curl.exe -s -X POST "http://{rb_ip}:{rb_port}/open/operation" `
-  -H "Content-Type: application/json" `
-  -d "{\"deviceNo\":\"{rb_device_no}\",\"ipCode\":{\"{rb_board_id}\":1},\"operationType\":\"liftingColumn_level\",\"action\":\"down\",\"liftingColumnNum\":1}"
+curl -s -X POST "http://{rb_ip}:{rb_port}/open/operation" \
+  -H "Content-Type: application/json" \
+  -d '{"deviceNo":"{rb_device_no}","ipCode":{"{rb_board_id}":1},"operationType":"liftingColumn_level","action":"down","liftingColumnNum":1}'
 ```
 
 This is exactly the body `RoadBlockerClient::openColumn` sends. `action:"up"`
@@ -251,7 +282,8 @@ stays open after a pass, the controller's self-close wiring isn't done; see
 **Common failures:**
 - `getStatus` works but `operation` does nothing → `ipCode`/`board_id`/column
   number wrong for your wiring.
-- Connection refused → wrong `rb_port` on the channel row.
+- Connection refused → wrong `rb_port` on the channel row (and on AlmaLinux,
+  confirm egress to the blocker's subnet isn't blocked by `firewalld`).
 
 ---
 
@@ -262,10 +294,10 @@ The platform only **pre-authorizes** the plate.
 
 **Isolate — push a whitelist add the way the worker does:**
 
-```powershell
-mosquitto_pub -h 127.0.0.1 -p 1883 `
-  -t "device/{exit_sn}/message/down/white_list_operator" `
-  -m "{\"id\":\"dbg1\",\"sn\":\"{exit_sn}\",\"name\":\"white_list_operator\",\"version\":\"1.0\",\"timestamp\":1700000000,\"payload\":{\"type\":\"white_list_operator\",\"body\":{\"operator_type\":\"update_or_add\",\"dldb_rec\":{\"plate\":\"B1234XYZ\",\"enable\":1,\"create_time\":\"2026-06-11 10:00:00\",\"enable_time\":\"2026-06-11 10:00:00\",\"overdue_time\":\"2026-07-11 10:00:00\",\"need_alarm\":0,\"time_seg_enable\":0,\"seg_time_start\":\"00:00:00\",\"seg_time_end\":\"00:00:00\"}}}}"
+```bash
+mosquitto_pub -h 127.0.0.1 -p 1883 \
+  -t "device/{exit_sn}/message/down/white_list_operator" \
+  -m '{"id":"dbg1","sn":"{exit_sn}","name":"white_list_operator","version":"1.0","timestamp":1700000000,"payload":{"type":"white_list_operator","body":{"operator_type":"update_or_add","dldb_rec":{"plate":"B1234XYZ","enable":1,"create_time":"2026-06-11 10:00:00","enable_time":"2026-06-11 10:00:00","overdue_time":"2026-07-11 10:00:00","need_alarm":0,"time_seg_enable":0,"seg_time_start":"00:00:00","seg_time_end":"00:00:00"}}}}'
 ```
 
 **Expected:** the camera ACKs on
@@ -295,9 +327,14 @@ Only meaningful once 1–7 are green, because the worker just wires them togethe
 
 **Run it in the foreground and read the log:**
 
-```powershell
-worker\.venv\Scripts\python.exe worker\worker.py
+```bash
+worker/.venv/bin/python worker/worker.py
 ```
+
+> In production the worker normally runs under **systemd** (e.g. `anpr-worker.service`),
+> not in the foreground. To debug, stop the unit and run it by hand:
+> `sudo systemctl stop anpr-worker` then the command above; live logs of the
+> managed unit are `sudo journalctl -u anpr-worker -f`.
 
 **Expected log lines on a healthy start:** dotenv loaded, MQTT connected
 (`rc=0`), subscribed to `device/+/message/up/...`, and every ~5s a `cron tick`.
@@ -317,24 +354,27 @@ run on a separate server (just change `MQTT_BROKER` / `BACKEND_URL`).
 
 **Common failures:**
 - `int() argument ... ReasonCode` → paho-mqtt 2.x; already handled in `on_connect`.
-- `ZoneInfoNotFoundError 'Asia/Jakarta'` → `pip install tzdata` (in requirements).
-- Two workers fighting → singleton lock on port `18923`; second instance exits.
+- `ZoneInfoNotFoundError 'Asia/Jakarta'` → `pip install tzdata` (in requirements);
+  on AlmaLinux you can instead `sudo dnf install -y tzdata`.
+- Two workers fighting → singleton lock on port `18923`; second instance exits
+  (watch for this if both a systemd unit and a hand-run copy are alive).
 
 ---
 
 ## 9. Full end-to-end smoke test
 
-With everything green, run one car through and watch all four logs at once:
+With everything green, run one car through and watch all four logs at once
+(four SSH sessions on prod):
 
-```powershell
+```bash
 # Terminal 1: all MQTT
 mosquitto_sub -h 127.0.0.1 -p 1883 -t "device/#" -v
 # Terminal 2: worker
-worker\.venv\Scripts\python.exe worker\worker.py
+worker/.venv/bin/python worker/worker.py
 # Terminal 3: simulate a plate in
 node frontend/simulator.cjs
 # Terminal 4: poll the audit trail
-curl.exe -s "http://127.0.0.1/anpr_backend/api/operation-log?limit=20"
+curl -s "http://127.0.0.1/anpr_backend/api/operation-log?limit=20"
 ```
 
 **Expected order in the audit log** (matches `COMMUNICATION.md` cycle):
@@ -352,6 +392,7 @@ the readable action labels (Audit Log page) map to these.
 |-----|-------|----------------|--------|
 | `COMMUNICATION.md` | "TCP open road blocker" | `RoadBlockerClient` uses **HTTP REST** on `rb_ip:rb_port` | fixed |
 | whitelist payload (pre-fix) | `operator_type:add`, `dldb_rec` array, no `create_time` | §7.8 wants `update_or_add`, single object, `create_time` + `payload.type` | fixed in `MqttOutbound` / `worker.py` |
+| `DEPLOYMENT.md` | "Ubuntu production deployment" | production runs **AlmaLinux** (this guide's command set assumes it) | flag for review |
 
 When you confirm a real device's behavior against a doc here and they disagree,
 add a row — keeping this table current is how the docs stay trustworthy.

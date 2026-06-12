@@ -21,23 +21,46 @@ N-1 sudah hijau.
 
 ---
 
-## 0. Perkakas (instal sekali)
+## 0. Lingkungan & perkakas
 
-| Perkakas | Untuk | Dapatkan di Windows |
-|----------|-------|---------------------|
-| `curl.exe` | Probe HTTP | bawaan Windows 10/11 (pakai `curl.exe`, bukan alias PowerShell `curl`) |
-| `mosquitto_pub` / `mosquitto_sub` | Probe MQTT | instal Mosquitto → ada di `C:\Program Files\mosquitto\` |
-| `psql` | Probe DB | bawaan PostgreSQL |
-| `php` | lint backend / skrip sekali jalan | `C:\xampp\php\php.exe` |
+Ada dua lingkungan dan perintahnya sedikit berbeda:
+
+- **Produksi — AlmaLinux** (Linux). Probe ini Anda jalankan via SSH di mesin
+  produksi. **Semua blok perintah di bawah ditulis dalam bash untuk AlmaLinux** —
+  itulah lingkungan yang berbicara dengan hardware sungguhan.
+- **Dev — Windows + XAMPP.** Probe sama, logika sama, hanya mekanik shell yang
+  beda. Terjemahkan tiap perintah dengan tabel ini:
+
+| Bash (AlmaLinux prod) | Windows dev (PowerShell) |
+|-----------------------|--------------------------|
+| `curl …` | `curl.exe …` (`curl` polos adalah alias `Invoke-WebRequest` dengan flag berbeda) |
+| sambungan baris `\` | backtick `` ` `` |
+| JSON kutip-tunggal `'{"k":1}'` | kutip-ganda + escape `"{\"k\":1}"` |
+| `php` (di `PATH`) | `C:\xampp\php\php.exe` |
+| `worker/.venv/bin/python worker/worker.py` | `worker\.venv\Scripts\python.exe worker\worker.py` |
+| `/etc/.../backend/config/config.php` | `backend\config\config.php` |
+
+Perkakas yang dibutuhkan (instal sekali):
+
+| Perkakas | AlmaLinux (prod) | Windows (dev) |
+|----------|------------------|---------------|
+| `curl` | prainstal | `curl.exe` bawaan Windows 10/11 |
+| `mosquitto_pub` / `mosquitto_sub` | `sudo dnf install -y mosquitto` (klien ikut paket broker) | instal Mosquitto → `C:\Program Files\mosquitto\` |
+| `psql` | `sudo dnf install -y postgresql` | bawaan PostgreSQL |
+| `php` | `sudo dnf install -y php-cli` | `C:\xampp\php\php.exe` |
 
 Nilai acuan proyek ini (dari `backend/config/config.php`):
 
 - Base URL backend: `http://127.0.0.1/anpr_backend`
+  (di AlmaLinux ini adalah vhost/alias mana pun yang dipakai Apache/nginx untuk
+  menyajikan `backend/public` — ganti dengan hostname produksi jika bukan `127.0.0.1`)
 - MQTT broker: `127.0.0.1:1883`
 - DB: host `127.0.0.1`, **port `5433`**, db `anpr_s300`, user `anpr`
 
-> Tip: di PowerShell selalu panggil `curl.exe` secara eksplisit. `curl` polos
-> adalah alias untuk `Invoke-WebRequest` dengan flag yang berbeda.
+> Catatan SELinux (AlmaLinux): jika Apache/nginx mengembalikan `502`/`permission
+> denied` saat mencapai worker atau DB, cek `getenforce` dan boolean
+> `httpd_can_network_connect` (`sudo setsebool -P httpd_can_network_connect 1`)
+> sebelum menyalahkan config aplikasi.
 
 ---
 
@@ -45,13 +68,13 @@ Nilai acuan proyek ini (dari `backend/config/config.php`):
 
 **Isolasi:**
 
-```powershell
+```bash
 psql -h 127.0.0.1 -p 5433 -U anpr -d anpr_s300 -c "SELECT 1;"
 ```
 
 **Diharapkan:** satu baris `?column? = 1`. Lalu cek skema:
 
-```powershell
+```bash
 psql -h 127.0.0.1 -p 5433 -U anpr -d anpr_s300 -c "\dt"
 psql -h 127.0.0.1 -p 5433 -U anpr -d anpr_s300 -c "SELECT key_name, value FROM settings;"
 ```
@@ -61,8 +84,10 @@ harus cocok. Pastikan `settings` berisi `blocker_close_mode` (default `hardware`
 dan `auto_start_s300`.
 
 **Kegagalan umum:**
-- `could not connect` → port salah (yang benar **5433**, bukan 5432) atau service mati.
-- `password authentication failed` → `config.php` dan role tidak sama.
+- `could not connect` → port salah (yang benar **5433**, bukan 5432) atau service
+  mati (`sudo systemctl status postgresql` di AlmaLinux).
+- `password authentication failed` → `config.php` dan role tidak sama, atau
+  `pg_hba.conf` belum diset `md5`/`scram-sha-256` untuk role `anpr`.
 
 ---
 
@@ -70,19 +95,19 @@ dan `auto_start_s300`.
 
 **Isolasi (tanpa perangkat):**
 
-```powershell
-curl.exe -s http://127.0.0.1/anpr_backend/api/health
-curl.exe -s http://127.0.0.1/anpr_backend/
+```bash
+curl -s http://127.0.0.1/anpr_backend/api/health
+curl -s http://127.0.0.1/anpr_backend/
 ```
 
 **Diharapkan:** `{"code":200,"message":"ok",...}`. Root mengembalikan versi + waktu.
 
 Lalu buktikan rute berbasis DB jalan:
 
-```powershell
-curl.exe -s "http://127.0.0.1/anpr_backend/api/settings"
-curl.exe -s "http://127.0.0.1/anpr_backend/api/channels"
-curl.exe -s "http://127.0.0.1/anpr_backend/api/channels/by-no/RJ001/status"
+```bash
+curl -s "http://127.0.0.1/anpr_backend/api/settings"
+curl -s "http://127.0.0.1/anpr_backend/api/channels"
+curl -s "http://127.0.0.1/anpr_backend/api/channels/by-no/RJ001/status"
 ```
 
 **Diharapkan:** `/api/channels/by-no/RJ001/status` mengembalikan `{ busy: false }`
@@ -94,26 +119,28 @@ kebenaran. `docs/COMMUNICATION.md` dan `ARCHITECTURE.md` menjelaskannya — jika
 endpoint yang terdokumentasi malah 404, dokumennya basi.
 
 **Kegagalan umum:**
-- `500` dengan debug aktif → exception dicetak; baca pesannya.
-- `404` pada rute yang seharusnya ada → rewrite/alias Apache `/anpr_backend`
-  tidak menunjuk ke `backend/public`.
+- `500` dengan debug aktif → exception dicetak; baca pesannya. Di AlmaLinux
+  pantau juga `sudo journalctl -u httpd` atau `/var/log/httpd/error_log`.
+- `404` pada rute yang seharusnya ada → rewrite/alias web server `/anpr_backend`
+  tidak menunjuk ke `backend/public` (cek vhost / `.htaccess` dan pastikan
+  `AllowOverride All` aktif).
 
 ---
 
 ## 3. MQTT broker (mosquitto)
 
-**Isolasi** — buka dua terminal.
+**Isolasi** — buka dua terminal (dua sesi SSH di prod).
 
 Terminal A (subscribe semua):
 
-```powershell
+```bash
 mosquitto_sub -h 127.0.0.1 -p 1883 -t "device/#" -v
 ```
 
 Terminal B (publish pesan palsu):
 
-```powershell
-mosquitto_pub -h 127.0.0.1 -p 1883 -t "device/TEST/message/up/keep_alive" -m "{\"hello\":1}"
+```bash
+mosquitto_pub -h 127.0.0.1 -p 1883 -t "device/TEST/message/up/keep_alive" -m '{"hello":1}'
 ```
 
 **Diharapkan:** Terminal A langsung mencetak topik + payload. Itu membuktikan
@@ -124,13 +151,17 @@ broker meneruskan trafik `device/#` — terlepas dari kamera dan worker.
 padanan `.../down/...` + `/reply`. Bentuk topik yang Anda publish di sini harus
 sama persis, atau filter subscription worker tidak akan menangkap trafik asli.
 
+> Di AlmaLinux pastikan broker hidup dan dapat dijangkau: `sudo systemctl status mosquitto`,
+> dan firewall mengizinkan `1883` jika kamera ada di host lain
+> (`sudo firewall-cmd --add-port=1883/tcp`).
+
 ---
 
 ## 4. Kamera ANPR — entry (pengenalan masuk)
 
 Kamera **push secara otonom**; Anda tidak polling. Pantau trafiknya:
 
-```powershell
+```bash
 mosquitto_sub -h 127.0.0.1 -p 1883 -t "device/+/message/up/ivs_result" -v
 ```
 
@@ -141,7 +172,7 @@ di-decode worker (`worker.py: handle_recognition`).
 
 **Simulasi tanpa hardware:**
 
-```powershell
+```bash
 node frontend/simulator.cjs        # kamera entry
 node frontend/exit_simulator.cjs   # kamera exit
 ```
@@ -164,15 +195,15 @@ Dua arah — uji masing-masing terpisah.
 **5a. Platform → S300 (outbound).** Backend memanggil base URL S300. Picu lewat
 rute platform:
 
-```powershell
-curl.exe -s -X POST "http://127.0.0.1/anpr_backend/api/s300/come/RJ001" `
-  -H "Content-Type: application/json" -d "{\"licensePlateNo\":\"B1234XYZ\"}"
+```bash
+curl -s -X POST "http://127.0.0.1/anpr_backend/api/s300/come/RJ001" \
+  -H "Content-Type: application/json" -d '{"licensePlateNo":"B1234XYZ"}'
 ```
 
 **Diharapkan:** `code:200` dan baris inspection dibuat. Verifikasi:
 
-```powershell
-curl.exe -s "http://127.0.0.1/anpr_backend/api/inspections?limit=1"
+```bash
+curl -s "http://127.0.0.1/anpr_backend/api/inspections?limit=1"
 ```
 
 Untuk memukul perangkat langsung (lewati platform), curl base URL-nya — ada di
@@ -184,18 +215,18 @@ dll. Jalur persis yang dipakai platform ada di pemanggilan `S300Client` dalam
 Simulasikan tiap callback untuk membuktikan backend menanganinya tanpa perangkat
 asli:
 
-```powershell
+```bash
 # work-status: op=1 inspecting
-curl.exe -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/work-status" `
-  -H "Content-Type: application/json" -d "{\"channelNo\":\"RJ001\",\"op\":1}"
+curl -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/work-status" \
+  -H "Content-Type: application/json" -d '{"channelNo":"RJ001","op":1}'
 
 # hasil uvis: clean
-curl.exe -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/uvis" `
-  -H "Content-Type: application/json" -d "{\"channelNo\":\"RJ001\",\"result\":\"clean\"}"
+curl -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/uvis" \
+  -H "Content-Type: application/json" -d '{"channelNo":"RJ001","result":"clean"}'
 
 # reset-complete
-curl.exe -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/reset-complete" `
-  -H "Content-Type: application/json" -d "{\"channelNo\":\"RJ001\"}"
+curl -s -X POST "http://127.0.0.1/anpr_backend/overseas/s300/reset-complete" \
+  -H "Content-Type: application/json" -d '{"channelNo":"RJ001"}'
 ```
 
 **Diharapkan:** callback UVIS memicu `DecisionEngine` → verdict; cek `decision`
@@ -223,8 +254,8 @@ PDF. `COMMUNICATION.md` langkah 4–7 menjelaskan urutannya.
 
 **Isolasi — baca status (aman, read-only):**
 
-```powershell
-curl.exe -s "http://{rb_ip}:{rb_port}/open/getStatus/{rb_device_no}"
+```bash
+curl -s "http://{rb_ip}:{rb_port}/open/getStatus/{rb_device_no}"
 ```
 
 **Diharapkan:** JSON berisi kode posisi kolom — `01` turun, `03` rendah, `05`
@@ -232,11 +263,11 @@ naik, `07` tinggi, plus `controlTheDeviceOnline`.
 
 **Isolasi — operasikan (menggerakkan hardware; kosongkan lajur dulu):**
 
-```powershell
+```bash
 # TURUNKAN (buka) kolom — kendaraan bisa lewat
-curl.exe -s -X POST "http://{rb_ip}:{rb_port}/open/operation" `
-  -H "Content-Type: application/json" `
-  -d "{\"deviceNo\":\"{rb_device_no}\",\"ipCode\":{\"{rb_board_id}\":1},\"operationType\":\"liftingColumn_level\",\"action\":\"down\",\"liftingColumnNum\":1}"
+curl -s -X POST "http://{rb_ip}:{rb_port}/open/operation" \
+  -H "Content-Type: application/json" \
+  -d '{"deviceNo":"{rb_device_no}","ipCode":{"{rb_board_id}":1},"operationType":"liftingColumn_level","action":"down","liftingColumnNum":1}'
 ```
 
 Ini persis body yang dikirim `RoadBlockerClient::openColumn`. `action:"up"`
@@ -253,7 +284,8 @@ dikerjakan; lihat `docs/DEVICE_SETUP_CHECKLIST.md`.
 **Kegagalan umum:**
 - `getStatus` jalan tapi `operation` tidak bereaksi → `ipCode`/`board_id`/nomor
   kolom salah untuk wiring Anda.
-- Connection refused → `rb_port` di baris channel salah.
+- Connection refused → `rb_port` di baris channel salah (dan di AlmaLinux,
+  pastikan egress ke subnet blocker tidak diblok `firewalld`).
 
 ---
 
@@ -264,10 +296,10 @@ Platform hanya **pra-otorisasi** plat.
 
 **Isolasi — push whitelist add seperti yang dilakukan worker:**
 
-```powershell
-mosquitto_pub -h 127.0.0.1 -p 1883 `
-  -t "device/{exit_sn}/message/down/white_list_operator" `
-  -m "{\"id\":\"dbg1\",\"sn\":\"{exit_sn}\",\"name\":\"white_list_operator\",\"version\":\"1.0\",\"timestamp\":1700000000,\"payload\":{\"type\":\"white_list_operator\",\"body\":{\"operator_type\":\"update_or_add\",\"dldb_rec\":{\"plate\":\"B1234XYZ\",\"enable\":1,\"create_time\":\"2026-06-11 10:00:00\",\"enable_time\":\"2026-06-11 10:00:00\",\"overdue_time\":\"2026-07-11 10:00:00\",\"need_alarm\":0,\"time_seg_enable\":0,\"seg_time_start\":\"00:00:00\",\"seg_time_end\":\"00:00:00\"}}}}"
+```bash
+mosquitto_pub -h 127.0.0.1 -p 1883 \
+  -t "device/{exit_sn}/message/down/white_list_operator" \
+  -m '{"id":"dbg1","sn":"{exit_sn}","name":"white_list_operator","version":"1.0","timestamp":1700000000,"payload":{"type":"white_list_operator","body":{"operator_type":"update_or_add","dldb_rec":{"plate":"B1234XYZ","enable":1,"create_time":"2026-06-11 10:00:00","enable_time":"2026-06-11 10:00:00","overdue_time":"2026-07-11 10:00:00","need_alarm":0,"time_seg_enable":0,"seg_time_start":"00:00:00","seg_time_end":"00:00:00"}}}}'
 ```
 
 **Diharapkan:** kamera ACK di
@@ -297,9 +329,14 @@ Hanya bermakna setelah 1–7 hijau, karena worker hanya menyatukan semuanya.
 
 **Jalankan di foreground dan baca log:**
 
-```powershell
-worker\.venv\Scripts\python.exe worker\worker.py
+```bash
+worker/.venv/bin/python worker/worker.py
 ```
+
+> Di produksi worker biasanya berjalan di bawah **systemd** (mis.
+> `anpr-worker.service`), bukan di foreground. Untuk debug, hentikan unit lalu
+> jalankan manual: `sudo systemctl stop anpr-worker` lalu perintah di atas; log
+> live dari unit terkelola: `sudo journalctl -u anpr-worker -f`.
 
 **Baris log yang diharapkan saat start sehat:** dotenv termuat, MQTT terhubung
 (`rc=0`), subscribe ke `device/+/message/up/...`, dan tiap ~5 dtk `cron tick`.
@@ -318,24 +355,27 @@ untuk dijalankan di server terpisah (cukup ubah `MQTT_BROKER` / `BACKEND_URL`).
 
 **Kegagalan umum:**
 - `int() argument ... ReasonCode` → paho-mqtt 2.x; sudah ditangani di `on_connect`.
-- `ZoneInfoNotFoundError 'Asia/Jakarta'` → `pip install tzdata` (ada di requirements).
-- Dua worker bentrok → singleton lock di port `18923`; instance kedua keluar.
+- `ZoneInfoNotFoundError 'Asia/Jakarta'` → `pip install tzdata` (ada di
+  requirements); di AlmaLinux bisa juga `sudo dnf install -y tzdata`.
+- Dua worker bentrok → singleton lock di port `18923`; instance kedua keluar
+  (waspadai ini jika unit systemd dan salinan manual sama-sama hidup).
 
 ---
 
 ## 9. Smoke test menyeluruh
 
-Saat semua hijau, jalankan satu mobil dan pantau empat log sekaligus:
+Saat semua hijau, jalankan satu mobil dan pantau empat log sekaligus (empat sesi
+SSH di prod):
 
-```powershell
+```bash
 # Terminal 1: semua MQTT
 mosquitto_sub -h 127.0.0.1 -p 1883 -t "device/#" -v
 # Terminal 2: worker
-worker\.venv\Scripts\python.exe worker\worker.py
+worker/.venv/bin/python worker/worker.py
 # Terminal 3: simulasi plat masuk
 node frontend/simulator.cjs
 # Terminal 4: pantau jejak audit
-curl.exe -s "http://127.0.0.1/anpr_backend/api/operation-log?limit=20"
+curl -s "http://127.0.0.1/anpr_backend/api/operation-log?limit=20"
 ```
 
 **Urutan yang diharapkan di audit log** (cocok dengan siklus `COMMUNICATION.md`):
@@ -353,6 +393,7 @@ dan label aksi yang mudah dibaca (halaman Audit Log) memetakan ke sini.
 |---------|-------|------------------|--------|
 | `COMMUNICATION.md` | "TCP open road blocker" | `RoadBlockerClient` pakai **HTTP REST** di `rb_ip:rb_port` | diperbaiki |
 | payload whitelist (pra-perbaikan) | `operator_type:add`, `dldb_rec` array, tanpa `create_time` | §7.8 minta `update_or_add`, objek tunggal, `create_time` + `payload.type` | diperbaiki di `MqttOutbound` / `worker.py` |
+| `DEPLOYMENT.md` | "Deployment produksi Ubuntu" | produksi memakai **AlmaLinux** (set perintah panduan ini mengasumsikan itu) | tandai untuk ditinjau |
 
 Saat Anda mengonfirmasi perilaku perangkat asli vs dokumen di sini dan keduanya
 berbeda, tambahkan baris — menjaga tabel ini tetap mutakhir adalah cara dokumen
