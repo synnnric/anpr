@@ -413,7 +413,14 @@ def mqtt_outbound_loop() -> None:
                 device_sn = item["device_sn"]
                 command = item["command_name"]
                 payload = item["payload"]
-                topic = f"device/{device_sn}/message/down/{command}"
+                # Two down-topic layouts exist in the field:
+                #   standard (sim/docs):  device/{sn}/message/down/{name}
+                #   sn-first (some cams): {sn}/device/message/down/{name}
+                # Publish to both — the device subscribes to one and ignores the other.
+                topics = [
+                    f"device/{device_sn}/message/down/{command}",
+                    f"{device_sn}/device/message/down/{command}",
+                ]
                 envelope = {
                     "id": gen_id(),
                     "sn": device_sn,
@@ -425,14 +432,14 @@ def mqtt_outbound_loop() -> None:
                     "payload": {"type": command, "body": payload},
                 }
                 try:
-                    info = State.mqtt_client.publish(topic, json.dumps(envelope), qos=0)
-                    if info.rc == mqtt.MQTT_ERR_SUCCESS:
+                    rcs = [State.mqtt_client.publish(tp, json.dumps(envelope), qos=0).rc for tp in topics]
+                    if any(rc == mqtt.MQTT_ERR_SUCCESS for rc in rcs):
                         backend_post(f"/api/mqtt-queue/{cmd_id}/sent", {})
                         log.info("outbound: published %s -> %s (queue#%s)", command, device_sn, cmd_id)
                     else:
                         backend_post(f"/api/mqtt-queue/{cmd_id}/failed",
-                                     {"error": f"paho rc={info.rc}"})
-                        log.warning("outbound: publish rc=%s for queue#%s", info.rc, cmd_id)
+                                     {"error": f"paho rc={rcs}"})
+                        log.warning("outbound: publish rc=%s for queue#%s", rcs, cmd_id)
                 except Exception as e:  # noqa: BLE001
                     backend_post(f"/api/mqtt-queue/{cmd_id}/failed", {"error": str(e)})
                     log.warning("outbound: exception for queue#%s: %s", cmd_id, e)
@@ -455,9 +462,13 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
         log.error("MQTT connect failed rc=%s", rc)
         return
     log.info("MQTT connected")
-    # Wildcard: catch every up/* message (ivs_result, keep_alive, gpio_in, gate_status...)
-    client.subscribe("device/+/message/up/+", qos=0)
-    log.info("subscribed: device/+/message/up/+")
+    # Catch every up/* message (ivs_result, keep_alive, gpio_in, gate_status...).
+    # Two layouts exist in the field, so subscribe to both:
+    #   device/{sn}/message/up/{name}  (simulator / docs)
+    #   {sn}/device/message/up/{name}  (some real cameras put the SN first)
+    for filt in ("device/+/message/up/+", "+/device/message/up/+"):
+        client.subscribe(filt, qos=0)
+        log.info("subscribed: %s", filt)
 
 
 def on_disconnect(client, userdata, *args):
@@ -469,10 +480,17 @@ def on_disconnect(client, userdata, *args):
 
 def on_message(client, userdata, msg):
     raw = msg.payload.decode("utf-8", errors="replace")
-    # Parse topic to extract device_sn and message_name
-    # Topic shape: device/{sn}/message/up/{name}
+    # Parse topic to extract device_sn and message_name. The SN position depends
+    # on the layout:
+    #   device/{sn}/message/up/{name} -> parts[0]=='device', sn=parts[1]
+    #   {sn}/device/message/up/{name} -> parts[1]=='device', sn=parts[0]
     parts = msg.topic.split("/")
-    device_sn = parts[1] if len(parts) > 1 else ""
+    if len(parts) >= 2 and parts[0] == "device":
+        device_sn = parts[1]
+    elif len(parts) >= 2 and parts[1] == "device":
+        device_sn = parts[0]
+    else:
+        device_sn = parts[1] if len(parts) > 1 else ""
     message_name = parts[-1] if parts else ""
 
     # 1) Fire-and-forget log to backend (every inbound message)
