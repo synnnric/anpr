@@ -36,8 +36,9 @@ const MqttContext = createContext<MqttContextType | null>(null);
 const DEFAULT_CONFIG: MqttConfig = {
   brokerUrl: '127.0.0.1',
   port: 8083,
-  username: '',
-  password: '',
+  // Broker now runs with allow_anonymous false, so default to the configured creds.
+  username: 'admin',
+  password: 'admin123',
   clientId: `anpr_dashboard_${Date.now()}`,
   useSSL: false,
 };
@@ -108,8 +109,20 @@ export function MqttProvider({ children }: { children: ReactNode }) {
 
     if (!sn) return;
 
+    // Real cameras use one of two topic layouts: the standard `device/{sn}/message/up/{name}`
+    // or SN-first `{sn}/device/message/up/{name}`. Subscribe to both so the live feed works
+    // regardless of firmware — the worker already bridges both layouts.
+    const up = (name: string, handler: (topic: string, msg: string) => void) => [
+      mqttService.subscribe(`device/${sn}/message/up/${name}`, handler),
+      mqttService.subscribe(`${sn}/device/message/up/${name}`, handler),
+    ];
+    const downReply = (name: string, handler: (topic: string, msg: string) => void) => [
+      mqttService.subscribe(`device/${sn}/message/down/${name}/reply`, handler),
+      mqttService.subscribe(`${sn}/device/message/down/${name}/reply`, handler),
+    ];
+
     // Recognition results
-    const u1 = mqttService.subscribe(`device/${sn}/message/up/ivs_result`, (topic, msg) => {
+    const uIvs = up('ivs_result', (topic, msg) => {
       addLogEntry('received', topic, msg, 'ivs_result');
       try {
         const data = JSON.parse(msg);
@@ -151,11 +164,11 @@ export function MqttProvider({ children }: { children: ReactNode }) {
     });
 
     // Quick recognition results
-    const u1b = mqttService.subscribe(`device/${sn}/message/up/quick_ivs_result`, (topic, msg) => {
+    const uQuick = up('quick_ivs_result', (topic, msg) => {
       addLogEntry('received', topic, msg, 'quick_ivs_result');
     });
 
-    // Heartbeat (subscribe both $/device/... and device/... formats)
+    // Heartbeat (subscribe $/device/..., device/..., and SN-first formats)
     const heartbeatHandler = (topic: string, msg: string) => {
       addLogEntry('received', topic, msg, 'keep_alive');
       try {
@@ -171,11 +184,13 @@ export function MqttProvider({ children }: { children: ReactNode }) {
         });
       } catch { /* ignore */ }
     };
-    const u2 = mqttService.subscribe(`$/device/${sn}/message/up/keep_alive`, heartbeatHandler);
-    const u2b = mqttService.subscribe(`device/${sn}/message/up/keep_alive`, heartbeatHandler);
+    const uHb = [
+      mqttService.subscribe(`$/device/${sn}/message/up/keep_alive`, heartbeatHandler),
+      ...up('keep_alive', heartbeatHandler),
+    ];
 
     // IO Input
-    const u3 = mqttService.subscribe(`device/${sn}/message/up/gpio_in`, (topic, msg) => {
+    const uIo = up('gpio_in', (topic, msg) => {
       addLogEntry('received', topic, msg, 'gpio_in');
       try {
         const data = JSON.parse(msg);
@@ -193,7 +208,7 @@ export function MqttProvider({ children }: { children: ReactNode }) {
     });
 
     // Barrier Gate Status
-    const u4 = mqttService.subscribe(`device/${sn}/message/up/barr_gate_status`, (topic, msg) => {
+    const uGate = up('barr_gate_status', (topic, msg) => {
       addLogEntry('received', topic, msg, 'barr_gate_status');
       try {
         const data = JSON.parse(msg);
@@ -211,7 +226,7 @@ export function MqttProvider({ children }: { children: ReactNode }) {
     });
 
     // Serial Data
-    const u5 = mqttService.subscribe(`device/${sn}/message/up/serial_data`, (topic, msg) => {
+    const uSerial = up('serial_data', (topic, msg) => {
       addLogEntry('received', topic, msg, 'serial_data');
       try {
         const data = JSON.parse(msg);
@@ -228,12 +243,12 @@ export function MqttProvider({ children }: { children: ReactNode }) {
     });
 
     // Snapshot
-    const u6 = mqttService.subscribe(`device/${sn}/message/up/snapshot`, (topic, msg) => {
+    const uSnap = up('snapshot', (topic, msg) => {
       addLogEntry('received', topic, msg, 'snapshot');
     });
 
     // Offline records
-    const u7 = mqttService.subscribe(`device/${sn}/message/up/offline_record`, (topic, msg) => {
+    const uOffline = up('offline_record', (topic, msg) => {
       addLogEntry('received', topic, msg, 'offline_record');
     });
 
@@ -245,13 +260,16 @@ export function MqttProvider({ children }: { children: ReactNode }) {
       'tts_voice', 'set_oss_cfg', 'reboot_dev', 'device_set',
       'check_offline_record', 'set_plate_encryption_cfg', 'gate_direct_open',
     ];
-    const replyUnsubs = replyTopics.map((name) =>
-      mqttService.subscribe(`device/${sn}/message/down/${name}/reply`, (topic, msg) => {
+    const replyUnsubs = replyTopics.flatMap((name) =>
+      downReply(name, (topic, msg) => {
         addLogEntry('received', topic, msg, `${name}/reply`);
       })
     );
 
-    unsubscribers.current = [u1, u1b, u2, u2b, u3, u4, u5, u6, u7, ...replyUnsubs];
+    unsubscribers.current = [
+      ...uIvs, ...uQuick, ...uHb, ...uIo, ...uGate,
+      ...uSerial, ...uSnap, ...uOffline, ...replyUnsubs,
+    ];
   }, [addLogEntry]);
 
   const connect = useCallback(async () => {
@@ -293,10 +311,13 @@ export function MqttProvider({ children }: { children: ReactNode }) {
 
   const publishMessage = useCallback((name: string, payload: unknown) => {
     if (!deviceSn) return;
-    const topic = `device/${deviceSn}/message/down/${name}`;
     const msg = JSON.stringify(payload);
-    mqttService.publish(topic, msg);
-    addLogEntry('sent', topic, msg, name);
+    // Publish to both topic layouts; the camera ignores the one it doesn't use.
+    const stdTopic = `device/${deviceSn}/message/down/${name}`;
+    const snFirstTopic = `${deviceSn}/device/message/down/${name}`;
+    mqttService.publish(stdTopic, msg);
+    mqttService.publish(snFirstTopic, msg);
+    addLogEntry('sent', stdTopic, msg, name);
   }, [deviceSn, addLogEntry]);
 
   const clearRecognitions = useCallback(() => setRecognitions([]), []);
