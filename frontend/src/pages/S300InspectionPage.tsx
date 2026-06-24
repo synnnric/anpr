@@ -21,6 +21,7 @@ import type {
 } from '../types/s300';
 import { OPERATING_STATE_COLORS } from '../types/s300';
 import { useMqtt } from '../contexts/MqttContext';
+import ImageWithFallback from '../components/ImageWithFallback';
 import { fmtPgTs, fmtPgTime } from '../utils/helpers';
 import { useI18n } from '../contexts/I18nContext';
 import type { TKey } from '../i18n/translations';
@@ -485,8 +486,7 @@ function InspectionDetailView({ insp }: { insp: InspectionDetail }) {
           <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
             {insp.face_images.map(f => (
               <div key={f.id} className="aspect-square bg-surface-dark border border-border rounded overflow-hidden">
-                <img src={f.image_url} alt="face" className="w-full h-full object-cover"
-                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = '0.2'; }} />
+                <ImageWithFallback src={f.image_url} alt="face" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
@@ -507,9 +507,9 @@ function InspectionDetailView({ insp }: { insp: InspectionDetail }) {
                   </div>
                   <div className="text-[10px] text-text-secondary">{t('s300.uvis.objects', { n: u.object_count })}</div>
                 </div>
-                {u.image_url && (
+                {u.image_url ? (
                   <div className="relative inline-block">
-                    <img src={u.image_url} className="max-w-full rounded border border-border" alt="UVIS" />
+                    <ImageWithFallback src={u.image_url} alt="UVIS" className="max-w-full rounded border border-border" />
                     {u.coords.map((c, idx) => (
                       <div key={idx}
                         className="absolute border-2 border-red-500 bg-red-500/20"
@@ -522,6 +522,8 @@ function InspectionDetailView({ insp }: { insp: InspectionDetail }) {
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <ImageWithFallback src={null} alt="UVIS" className="w-40 h-40 rounded border border-border bg-surface-dark" />
                 )}
               </div>
             ))}
