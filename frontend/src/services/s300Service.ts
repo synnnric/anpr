@@ -33,6 +33,22 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const apiBase = API_BASE;
 
+/**
+ * Resolve a backend media path to an absolute URL. The backend returns
+ * upload paths relative to its own root (e.g. "/anpr_backend/uploads/…"),
+ * which break when the frontend is served from a different origin. Anchor
+ * them to the API base's origin so they load regardless of where the SPA runs.
+ */
+export function mediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  try {
+    return new URL(API_BASE).origin + (path.startsWith('/') ? path : '/' + path);
+  } catch {
+    return path;
+  }
+}
+
 // ----- channels -----
 export const listChannels = () => request<S300Channel[]>('GET', '/api/channels');
 export const createChannel = (data: Partial<S300Channel>) => request<S300Channel>('POST', '/api/channels', data);

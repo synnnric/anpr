@@ -155,6 +155,8 @@ export interface InspectionDetail extends Inspection {
   video_streams: VideoStream[];
   uvis: Uvis[];
   operations: OperationEntry[];
+  vehicle_full_image_url: string | null;
+  vehicle_small_image_url: string | null;
 }
 
 export const OPERATING_STATE_LABELS: Record<number, string> = {

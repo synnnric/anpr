@@ -81,6 +81,8 @@ CREATE TABLE IF NOT EXISTS vehicles (
     anpr_device_sn       VARCHAR(64),
     image_path           VARCHAR(512),
     image_fragment_path  VARCHAR(512),
+    full_image_path      VARCHAR(512),   -- full scene snapshot (from ivs_result full_image_content)
+    small_image_path     VARCHAR(512),   -- plate close-up (from ivs_result small_image_content)
     unique_id            VARCHAR(64),
     detected_at          TIMESTAMP NOT NULL,
     created_at           TIMESTAMP NOT NULL DEFAULT NOW()

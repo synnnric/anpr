@@ -4,6 +4,7 @@ namespace App\Controllers;
 use App\Core\Database;
 use App\Core\Request;
 use App\Core\Response;
+use App\Services\ImageStorage;
 
 class VehicleController {
     public function index(Request $req) {
@@ -32,6 +33,14 @@ class VehicleController {
             Response::error('license_plate required', 400);
             return null;
         }
+        // ivs_result snapshots arrive as base64; save them to files (like UVIS).
+        $fullPath = !empty($body['full_image_b64'])
+            ? ImageStorage::saveBase64('vehicles', $body['full_image_b64'])
+            : ($body['full_image_path'] ?? null);
+        $smallPath = !empty($body['small_image_b64'])
+            ? ImageStorage::saveBase64('vehicles', $body['small_image_b64'])
+            : ($body['small_image_path'] ?? null);
+
         $id = Database::insert('vehicles', [
             'license_plate' => $body['license_plate'],
             'plate_type' => $body['plate_type'] ?? null,
@@ -44,6 +53,8 @@ class VehicleController {
             'anpr_device_sn' => $body['anpr_device_sn'] ?? null,
             'image_path' => $body['image_path'] ?? null,
             'image_fragment_path' => $body['image_fragment_path'] ?? null,
+            'full_image_path' => $fullPath,
+            'small_image_path' => $smallPath,
             'unique_id' => $body['unique_id'] ?? null,
             'detected_at' => $body['detected_at'] ?? gmdate('Y-m-d H:i:s'),
         ]);

@@ -77,6 +77,20 @@ class InspectionController {
         unset($o);
         $row['operations'] = $ops;
 
+        // Vehicle snapshot images (from ivs_result) — link via the inspection's
+        // vehicle_id, falling back to the latest detection for this plate.
+        $veh = $row['vehicle_id']
+            ? Database::fetchOne('SELECT full_image_path, small_image_path FROM vehicles WHERE id = ?', [$row['vehicle_id']])
+            : null;
+        if (!$veh) {
+            $veh = Database::fetchOne(
+                'SELECT full_image_path, small_image_path FROM vehicles WHERE license_plate = ? ORDER BY id DESC LIMIT 1',
+                [$row['license_plate']]
+            );
+        }
+        $row['vehicle_full_image_url']  = ImageStorage::publicUrl($veh['full_image_path'] ?? null);
+        $row['vehicle_small_image_url'] = ImageStorage::publicUrl($veh['small_image_path'] ?? null);
+
         return ['code' => 200, 'message' => 'success', 'data' => $row];
     }
 

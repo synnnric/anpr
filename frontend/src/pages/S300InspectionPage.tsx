@@ -13,7 +13,7 @@ import {
   s300EmergencyStop, s300ManualReset,
   connectS300Events,
   listVipPlates, createVipPlate, deleteVipPlate, updateVipPlate,
-  getSettings, updateSettings,
+  getSettings, updateSettings, mediaUrl,
   type S300Event,
 } from '../services/s300Service';
 import type {
@@ -556,6 +556,21 @@ function InspectionDetailView({ insp, onAction, busy }: {
         <Timeline insp={insp} />
       </div>
 
+      {(insp.vehicle_full_image_url || insp.vehicle_small_image_url) && (
+        <Panel title={t('s300.vehicle.title')}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <div className="md:col-span-2 aspect-video bg-surface-dark border border-border rounded overflow-hidden">
+              <ImageWithFallback src={mediaUrl(insp.vehicle_full_image_url)} alt="vehicle"
+                className="w-full h-full object-contain" />
+            </div>
+            <div className="aspect-video md:aspect-auto bg-surface-dark border border-border rounded overflow-hidden flex items-center justify-center p-2">
+              <ImageWithFallback src={mediaUrl(insp.vehicle_small_image_url)} alt="plate"
+                className="max-w-full max-h-40 object-contain" />
+            </div>
+          </div>
+        </Panel>
+      )}
+
       {insp.video_streams.length > 0 && (
         <Panel title={t('s300.video.title', { n: insp.video_streams.length })}>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -579,7 +594,7 @@ function InspectionDetailView({ insp, onAction, busy }: {
           <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
             {insp.face_images.map(f => (
               <div key={f.id} className="aspect-square bg-surface-dark border border-border rounded overflow-hidden">
-                <ImageWithFallback src={f.image_url} alt="face" fallback={facePlaceholder} className="w-full h-full object-cover" />
+                <ImageWithFallback src={mediaUrl(f.image_url)} alt="face" fallback={facePlaceholder} className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
@@ -600,7 +615,7 @@ function InspectionDetailView({ insp, onAction, busy }: {
                   </div>
                   <div className="text-[10px] text-text-secondary">{t('s300.uvis.objects', { n: u.object_count })}</div>
                 </div>
-                <UvisImage src={u.image_url} coords={u.coords} />
+                <UvisImage src={mediaUrl(u.image_url)} coords={u.coords} />
               </div>
             ))}
           </div>

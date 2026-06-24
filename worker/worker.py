@@ -242,6 +242,9 @@ def handle_recognition(topic: str, payload: str) -> None:
         "anpr_device_sn":       sn,
         "image_path":           result.get("imagePath") or None,
         "image_fragment_path":  result.get("imageFragmentPath") or None,
+        # Base64 JPEGs from ivs_result — the backend saves them to files.
+        "full_image_b64":       result.get("full_image_content") or None,
+        "small_image_b64":      result.get("small_image_content") or None,
         "unique_id":            result.get("unique_id") or None,
         "detected_at":          time.strftime("%Y-%m-%d %H:%M:%S"),
     }
