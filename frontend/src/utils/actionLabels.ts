@@ -11,7 +11,7 @@ const ACTION_LABELS: Record<string, { id: string; en: string }> = {
   come_vip_bypass:       { id: 'Lewati VIP', en: 'VIP bypass' },
   capture:               { id: 'Ambil gambar', en: 'Capture' },
   leave:                 { id: 'Kendaraan keluar', en: 'Vehicle leave' },
-  auto_leave:            { id: 'Keluar otomatis', en: 'Auto leave' },
+  auto_leave:            { id: 'Respon Palang', en: 'Gate response' },
   read_work_status:      { id: 'Baca status kerja', en: 'Read work status' },
   emergency_stop:        { id: 'Henti darurat', en: 'Emergency stop' },
   manual_reset:          { id: 'Reset manual', en: 'Manual reset' },
@@ -25,9 +25,13 @@ const ACTION_LABELS: Record<string, { id: string; en: string }> = {
   whitelist_enqueue_add: { id: 'Tambah whitelist', en: 'Whitelist add' },
   whitelist_skipped:     { id: 'Whitelist dilewati', en: 'Whitelist skipped' },
 
-  // Road blocker
-  open_blocker:          { id: 'Buka palang', en: 'Open blocker' },
-  open_blocker_skipped:  { id: 'Buka palang dilewati', en: 'Open blocker skipped' },
+  // ANPR camera gate (pre-inspection, gpio_out)
+  open_entry_gate:         { id: 'Buka palang', en: 'Open gate' },
+  open_entry_gate_skipped: { id: 'Buka palang dilewati', en: 'Gate open skipped' },
+
+  // Road blocker (lifting column) — distinct from the ANPR gate ("Buka palang")
+  open_blocker:          { id: 'Buka palang jalan', en: 'Open road blocker' },
+  open_blocker_skipped:  { id: 'Buka palang jalan dilewati', en: 'Open road blocker skipped' },
   blocker_close:         { id: 'Tutup palang', en: 'Close blocker' },
   up:                    { id: 'Palang naik', en: 'Blocker up' },
   down:                  { id: 'Palang turun', en: 'Blocker down' },

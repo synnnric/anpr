@@ -13,12 +13,24 @@ import { resetData } from '../services/adminService';
 import { parsePgTs, fmtPgTs } from '../utils/helpers';
 import { useI18n } from '../contexts/I18nContext';
 
-type DirectionTab = 'inbound' | 'outbound';
+/** One unified row — inbound and outbound merged into a single feed. */
+interface MergedRow {
+  key: string;
+  dir: 'in' | 'out';
+  ts: string | null;
+  device_sn: string;
+  message_name: string;
+  plate: string | null;
+  topic?: string;
+  status?: 'pending' | 'sent' | 'failed';
+  attempts?: number;
+  last_error?: string | null;
+  payload: unknown;
+}
 
 export default function MqttLogsPage() {
   const { t } = useI18n();
   const [devices, setDevices] = useState<MqttDevice[]>([]);
-  const [tab, setTab] = useState<DirectionTab>('inbound');
 
   const [deviceFilter, setDeviceFilter] = useState<string>('');
   const [nameFilter, setNameFilter] = useState<string>('');
@@ -42,10 +54,10 @@ export default function MqttLogsPage() {
   const filters: MqttLogFilters = useMemo(() => ({
     device_sn:     deviceFilter || undefined,
     message_name:  nameFilter || undefined,
-    status:        tab === 'outbound' && statusFilter ? statusFilter : undefined,
+    status:        statusFilter || undefined,   // ignored by the inbound endpoint
     license_plate: plateFilter || undefined,
     limit:         200,
-  }), [deviceFilter, nameFilter, statusFilter, plateFilter, tab]);
+  }), [deviceFilter, nameFilter, statusFilter, plateFilter]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -82,7 +94,22 @@ export default function MqttLogsPage() {
     return () => clearInterval(tm);
   }, []);
 
-  const dropdownNames = tab === 'inbound' ? messageNames.inbound : messageNames.outbound;
+  // Merge inbound + outbound into one feed, newest first.
+  const mergedRows = useMemo<MergedRow[]>(() => {
+    const ins: MergedRow[] = inboundRows.map(r => ({
+      key: `in-${r.id}`, dir: 'in', ts: r.received_at,
+      device_sn: r.device_sn, message_name: r.message_name,
+      plate: r.license_plate || null, topic: r.topic, payload: r.payload,
+    }));
+    const outs: MergedRow[] = outboundRows.map(r => ({
+      key: `out-${r.id}`, dir: 'out', ts: r.created_at,
+      device_sn: r.device_sn, message_name: r.message_name,
+      plate: extractOutboundPlate(r.payload), payload: r.payload,
+      status: r.status, attempts: r.attempts, last_error: r.last_error,
+    }));
+    return [...ins, ...outs].sort((a, b) =>
+      (parsePgTs(b.ts)?.getTime() ?? 0) - (parsePgTs(a.ts)?.getTime() ?? 0));
+  }, [inboundRows, outboundRows]);
 
   const handleReset = async () => {
     setResetting(true);
@@ -203,11 +230,9 @@ export default function MqttLogsPage() {
 
         <div className="bg-surface border border-border rounded-lg p-3">
           <div className="flex flex-wrap gap-2 items-center">
-            <div className="flex bg-surface-dark rounded-md p-0.5">
-              <TabBtn icon={ArrowDownToLine} label={t('mqtt_logs.tab.inbound', { n: inboundTotal })}
-                active={tab === 'inbound'} onClick={() => setTab('inbound')} />
-              <TabBtn icon={ArrowUpFromLine} label={t('mqtt_logs.tab.outbound', { n: outboundTotal })}
-                active={tab === 'outbound'} onClick={() => setTab('outbound')} />
+            <div className="flex items-center gap-3 text-xs text-text-secondary mr-1" title={t('mqtt_logs.totals')}>
+              <span className="flex items-center gap-1"><ArrowDownToLine className="w-3.5 h-3.5 text-blue-300" /> {inboundTotal.toLocaleString()}</span>
+              <span className="flex items-center gap-1"><ArrowUpFromLine className="w-3.5 h-3.5 text-emerald-300" /> {outboundTotal.toLocaleString()}</span>
             </div>
             <div className="h-6 w-px bg-border mx-1" />
             <select value={deviceFilter} onChange={e => setDeviceFilter(e.target.value)}
@@ -222,17 +247,16 @@ export default function MqttLogsPage() {
             <select value={nameFilter} onChange={e => setNameFilter(e.target.value)}
               className="bg-surface-dark border border-border rounded-md px-2 py-1.5 text-xs text-text-primary">
               <option value="">{t('mqtt_logs.filter.all_messages')}</option>
-              {dropdownNames.map(n => <option key={n} value={n}>{n}</option>)}
+              {messageNames.all.map(n => <option key={n} value={n}>{n}</option>)}
             </select>
-            {tab === 'outbound' && (
-              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-                className="bg-surface-dark border border-border rounded-md px-2 py-1.5 text-xs text-text-primary">
-                <option value="">{t('mqtt_logs.filter.all_statuses')}</option>
-                <option value="pending">{t('mqtt_logs.filter.pending')}</option>
-                <option value="sent">{t('mqtt_logs.filter.sent')}</option>
-                <option value="failed">{t('mqtt_logs.filter.failed')}</option>
-              </select>
-            )}
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+              className="bg-surface-dark border border-border rounded-md px-2 py-1.5 text-xs text-text-primary"
+              title={t('mqtt_logs.filter.status_outbound_only')}>
+              <option value="">{t('mqtt_logs.filter.all_statuses')}</option>
+              <option value="pending">{t('mqtt_logs.filter.pending')}</option>
+              <option value="sent">{t('mqtt_logs.filter.sent')}</option>
+              <option value="failed">{t('mqtt_logs.filter.failed')}</option>
+            </select>
             <div className="flex items-center gap-1 bg-surface-dark border border-border rounded-md px-2 py-0.5">
               <Car className="w-3.5 h-3.5 text-text-secondary" />
               <input value={plateInput}
@@ -263,11 +287,7 @@ export default function MqttLogsPage() {
         </div>
 
         <div className="bg-surface border border-border rounded-lg overflow-hidden">
-          {tab === 'inbound' ? (
-            <InboundTable rows={inboundRows} expanded={expanded} onToggle={toggle} onPlateClick={filterToPlate} />
-          ) : (
-            <OutboundTable rows={outboundRows} expanded={expanded} onToggle={toggle} onPlateClick={filterToPlate} />
-          )}
+          <MergedTable rows={mergedRows} expanded={expanded} onToggle={toggle} onPlateClick={filterToPlate} />
         </div>
       </div>
     </div>
@@ -354,77 +374,6 @@ function Stat({ icon: Icon, label, value, color }: {
   );
 }
 
-function TabBtn({ icon: Icon, label, active, onClick }: {
-  icon: typeof Activity; label: string; active: boolean; onClick: () => void;
-}) {
-  return (
-    <button onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-        active ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'
-      }`}>
-      <Icon className="w-3.5 h-3.5" /> {label}
-    </button>
-  );
-}
-
-const fmtTime = fmtPgTs;
-
-function InboundTable({ rows, expanded, onToggle, onPlateClick }: {
-  rows: MqttInboundRow[]; expanded: Record<string, boolean>;
-  onToggle: (k: string) => void; onPlateClick: (p: string) => void;
-}) {
-  const { t } = useI18n();
-  if (rows.length === 0) {
-    return <div className="p-6 text-center text-sm text-text-secondary">{t('mqtt_logs.empty.inbound')}</div>;
-  }
-  return (
-    <table className="w-full text-xs">
-      <thead className="bg-surface-dark border-b border-border">
-        <tr>
-          <th className="text-left p-2 w-8"></th>
-          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.time')}</th>
-          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.device_sn')}</th>
-          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.message')}</th>
-          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.plate')}</th>
-          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.topic')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map(r => {
-          const key = `in-${r.id}`;
-          const open = !!expanded[key];
-          return (
-            <Fragment key={key}>
-              <tr className="border-b border-border hover:bg-surface-dark cursor-pointer"
-                onClick={() => onToggle(key)}>
-                <td className="p-2 text-text-secondary">
-                  {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                </td>
-                <td className="p-2 text-text-secondary font-mono whitespace-nowrap">{fmtTime(r.received_at)}</td>
-                <td className="p-2 text-text-primary font-mono truncate max-w-[180px]" title={r.device_sn}>{r.device_sn}</td>
-                <td className="p-2"><MsgPill name={r.message_name} /></td>
-                <td className="p-2">
-                  {r.license_plate ? <PlateChip plate={r.license_plate} onClick={onPlateClick} /> : <span className="text-text-secondary/40">—</span>}
-                </td>
-                <td className="p-2 text-text-secondary font-mono truncate max-w-[300px]" title={r.topic}>{r.topic}</td>
-              </tr>
-              {open && (
-                <tr className="border-b border-border bg-bg">
-                  <td colSpan={6} className="p-3">
-                    <pre className="text-[10px] text-text-secondary whitespace-pre-wrap break-all max-h-72 overflow-y-auto bg-surface-dark p-2 rounded border border-border">
-                      {JSON.stringify(r.payload, null, 2)}
-                    </pre>
-                  </td>
-                </tr>
-              )}
-            </Fragment>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
-
 function extractOutboundPlate(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return null;
   const p = payload as Record<string, unknown>;
@@ -437,60 +386,70 @@ function extractOutboundPlate(payload: unknown): string | null {
       .filter((x): x is string => !!x);
     if (plates.length === 1) return plates[0];
     if (plates.length > 1) return plates.join(', ');
+  } else if (recs && typeof recs === 'object' && typeof (recs as Record<string, unknown>).plate === 'string') {
+    return (recs as Record<string, string>).plate;
   }
   return null;
 }
 
-function OutboundTable({ rows, expanded, onToggle, onPlateClick }: {
-  rows: MqttOutboundRow[]; expanded: Record<string, boolean>;
+function MergedTable({ rows, expanded, onToggle, onPlateClick }: {
+  rows: MergedRow[]; expanded: Record<string, boolean>;
   onToggle: (k: string) => void; onPlateClick: (p: string) => void;
 }) {
   const { t } = useI18n();
   if (rows.length === 0) {
-    return <div className="p-6 text-center text-sm text-text-secondary">{t('mqtt_logs.empty.outbound')}</div>;
+    return <div className="p-6 text-center text-sm text-text-secondary">{t('mqtt_logs.empty.all')}</div>;
   }
   return (
     <table className="w-full text-xs">
       <thead className="bg-surface-dark border-b border-border">
         <tr>
           <th className="text-left p-2 w-8"></th>
-          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.created')}</th>
-          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.sent')}</th>
+          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.time')}</th>
+          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.direction')}</th>
           <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.device_sn')}</th>
-          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.command')}</th>
+          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.message')}</th>
           <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.plate')}</th>
           <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.status')}</th>
-          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.attempts')}</th>
         </tr>
       </thead>
       <tbody>
         {rows.map(r => {
-          const key = `out-${r.id}`;
-          const open = !!expanded[key];
-          const plate = extractOutboundPlate(r.payload);
+          const open = !!expanded[r.key];
           return (
-            <Fragment key={key}>
+            <Fragment key={r.key}>
               <tr className="border-b border-border hover:bg-surface-dark cursor-pointer"
-                onClick={() => onToggle(key)}>
+                onClick={() => onToggle(r.key)}>
                 <td className="p-2 text-text-secondary">
                   {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                 </td>
-                <td className="p-2 text-text-secondary font-mono whitespace-nowrap">{fmtTime(r.created_at)}</td>
-                <td className="p-2 text-text-secondary font-mono whitespace-nowrap">{fmtTime(r.sent_at)}</td>
+                <td className="p-2 text-text-secondary font-mono whitespace-nowrap">{fmtPgTs(r.ts)}</td>
+                <td className="p-2"><DirPill dir={r.dir} /></td>
                 <td className="p-2 text-text-primary font-mono truncate max-w-[180px]" title={r.device_sn}>{r.device_sn}</td>
                 <td className="p-2"><MsgPill name={r.message_name} /></td>
                 <td className="p-2">
-                  {plate ? <PlateChip plate={plate} onClick={onPlateClick} /> : <span className="text-text-secondary/40">—</span>}
+                  {r.plate ? <PlateChip plate={r.plate} onClick={onPlateClick} /> : <span className="text-text-secondary/40">—</span>}
                 </td>
-                <td className="p-2"><StatusPill status={r.status} /></td>
-                <td className="p-2 text-text-primary">{r.attempts}</td>
+                <td className="p-2">
+                  {r.dir === 'out' && r.status ? <StatusPill status={r.status} /> : <span className="text-text-secondary/40">—</span>}
+                </td>
               </tr>
               {open && (
                 <tr className="border-b border-border bg-bg">
-                  <td colSpan={8} className="p-3">
-                    {r.last_error && (
+                  <td colSpan={7} className="p-3">
+                    {r.dir === 'in' && r.topic && (
+                      <div className="mb-2 text-[11px] text-text-secondary font-mono break-all">
+                        {t('mqtt_logs.col.topic')}: {r.topic}
+                      </div>
+                    )}
+                    {r.dir === 'out' && r.last_error && (
                       <div className="mb-2 text-[11px] text-danger bg-danger/10 border border-danger/30 rounded p-2">
                         <span className="font-semibold">{t('mqtt_logs.last_error')}</span> {r.last_error}
+                      </div>
+                    )}
+                    {r.dir === 'out' && typeof r.attempts === 'number' && (
+                      <div className="mb-2 text-[11px] text-text-secondary">
+                        {t('mqtt_logs.col.attempts')}: {r.attempts}
                       </div>
                     )}
                     <pre className="text-[10px] text-text-secondary whitespace-pre-wrap break-all max-h-72 overflow-y-auto bg-surface-dark p-2 rounded border border-border">
@@ -504,6 +463,18 @@ function OutboundTable({ rows, expanded, onToggle, onPlateClick }: {
         })}
       </tbody>
     </table>
+  );
+}
+
+function DirPill({ dir }: { dir: 'in' | 'out' }) {
+  return dir === 'in' ? (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-blue-500/15 text-blue-300 border-blue-500/30">
+      <ArrowDownToLine className="w-3 h-3" /> IN
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-emerald-500/15 text-emerald-300 border-emerald-500/30">
+      <ArrowUpFromLine className="w-3 h-3" /> OUT
+    </span>
   );
 }
 
@@ -525,6 +496,7 @@ function MsgPill({ name }: { name: string }) {
     : name === 'keep_alive' ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
     : name === 'white_list_operator' ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
     : name === 'gpio_in' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+    : name === 'gpio_out' ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
     : 'bg-surface-dark text-text-primary border-border';
   return (
     <span className={`inline-block text-[10px] font-mono px-1.5 py-0.5 rounded border ${cls}`}>
