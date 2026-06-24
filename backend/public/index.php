@@ -120,6 +120,8 @@ $router->get('/api/dashboard', fn($r) => $dash->index($r));
 $ins = new InspectionController();
 $router->get('/api/inspections',       fn($r) => $ins->index($r));
 $router->get('/api/inspections/{id}',  fn($r) => $ins->show($r));
+$router->post('/api/inspections/{id}/approve', fn($r) => $ins->approve($r));
+$router->post('/api/inspections/{id}/reject',  fn($r) => $ins->reject($r));
 
 // === Vehicles ===
 $v = new VehicleController();

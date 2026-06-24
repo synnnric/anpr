@@ -10,9 +10,15 @@ interface ApiResponse<T> {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  // Attach the bearer token (when signed in) so the backend can audit who acted,
+  // e.g. who approved/rejected a suspect inspection.
+  const headers: Record<string, string> = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  const token = localStorage.getItem('anpr_auth_token');
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(API_BASE + path, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   const json: ApiResponse<T> = await res.json();
@@ -40,6 +46,12 @@ export const listInspections = (params: Record<string, string | number> = {}) =>
   return request<{ items: Inspection[]; total: number }>('GET', `/api/inspections${q ? '?' + q : ''}`);
 };
 export const getInspection = (id: number) => request<InspectionDetail>('GET', `/api/inspections/${id}`);
+
+// Manual review of a SUSPECT inspection — approve (let in) / reject (turn back).
+export const approveInspection = (id: number, note?: string) =>
+  request<Inspection>('POST', `/api/inspections/${id}/approve`, { note });
+export const rejectInspection = (id: number, note?: string) =>
+  request<Inspection>('POST', `/api/inspections/${id}/reject`, { note });
 
 // ----- channel status -----
 export const getChannelStatus = (channelNo: string) =>

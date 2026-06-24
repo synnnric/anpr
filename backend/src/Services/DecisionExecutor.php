@@ -51,8 +51,32 @@ class DecisionExecutor {
             'status' => 'success',
         ]);
 
+        // SUSPECT → hold for manual review. The vehicle stays at the lane (no
+        // blocker, no /leave) until an operator approves or rejects it via
+        // resolveReview(). This is the deliberate human-in-the-loop gate.
+        if ($decision === 'suspect') {
+            Database::update('inspections',
+                ['review_status' => 'pending'],
+                'id = :id', ['id' => $inspection['id']]
+            );
+            InspectionService::logOperation([
+                'channel_no' => $inspection['channel_no'],
+                'inspection_id' => $inspection['id'],
+                'action' => 'review_required',
+                'request_payload' => ['reason' => $reason],
+                'status' => 'success',
+            ]);
+            InspectionService::pushEvent('review-required', [
+                'inspectionId' => $inspection['id'],
+                'channelNo' => $inspection['channel_no'],
+                'licensePlate' => $inspection['license_plate'],
+                'reason' => $reason,
+            ]);
+            return; // no side effects until a human decides
+        }
+
         // Branch on decision
-        if (in_array($decision, ['pass', 'suspect', 'vip_pass'], true)) {
+        if (in_array($decision, ['pass', 'vip_pass'], true)) {
             self::openBlocker($inspection, $channel, $decision);
             self::whitelistOnExitCamera($inspection, $channel);
         } else if ($decision === 'fail') {
@@ -64,6 +88,63 @@ class DecisionExecutor {
         if ($decision !== 'vip_pass') {
             self::autoLeave($inspection, $channel);
         }
+    }
+
+    /**
+     * Resolve a SUSPECT inspection that was held for manual review.
+     *   approve → treat like a pass (open road blocker + whitelist exit camera)
+     *   reject  → treat like a fail (back-up audio prompt + deny the visit)
+     * Either way the channel is then released via /leave so the S300 can reset.
+     *
+     * Records the decider in the inspection's review_* columns AND in the
+     * operation log (actor_username), so the audit trail shows who approved /
+     * rejected. Idempotent: returns false if the inspection isn't awaiting review.
+     *
+     * @param array  $inspection  Row from inspections
+     * @param array  $channel     Row from channels
+     * @param bool   $approved    true = approve (let in), false = reject (turn back)
+     * @param string $actor       username of the approver / rejecter
+     * @param ?string $note       optional free-text note recorded in the log
+     */
+    public static function resolveReview(array $inspection, array $channel, bool $approved, string $actor, ?string $note = null): bool {
+        if ($inspection['decision'] !== 'suspect' || ($inspection['review_status'] ?? null) !== 'pending') {
+            return false; // not awaiting review — guard against double-resolve
+        }
+
+        $status = $approved ? 'approved' : 'rejected';
+        Database::update('inspections', [
+            'review_status' => $status,
+            'reviewed_by' => $actor,
+            'reviewed_at' => gmdate('Y-m-d H:i:s'),
+        ], 'id = :id', ['id' => $inspection['id']]);
+
+        InspectionService::logOperation([
+            'actor_username' => $actor,
+            'channel_no' => $inspection['channel_no'],
+            'inspection_id' => $inspection['id'],
+            'action' => $approved ? 'review_approve' : 'review_reject',
+            'request_payload' => ['note' => $note, 'reason' => $inspection['decision_reason'] ?? null],
+            'status' => 'success',
+        ]);
+
+        InspectionService::pushEvent('review-resolved', [
+            'inspectionId' => $inspection['id'],
+            'channelNo' => $inspection['channel_no'],
+            'licensePlate' => $inspection['license_plate'],
+            'reviewStatus' => $status,
+            'reviewedBy' => $actor,
+        ]);
+
+        if ($approved) {
+            self::openBlocker($inspection, $channel, 'suspect');
+            self::whitelistOnExitCamera($inspection, $channel);
+        } else {
+            self::sendBackUpAudio($inspection, $channel);
+            self::markVisitDenied($inspection, $inspection['decision_reason'] ?? 'Rejected on manual review');
+        }
+
+        self::autoLeave($inspection, $channel);
+        return true;
     }
 
     private static function whitelistOnExitCamera(array $inspection, array $channel): void {

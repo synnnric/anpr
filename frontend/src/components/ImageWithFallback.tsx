@@ -6,6 +6,10 @@ type Props = Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> & {
   /** Placeholder shown when src is missing or fails to load. Defaults to a
    *  generic "photo" graphic; pass a context-specific dummy (face, UVIS, …). */
   fallback?: string;
+  /** Notified whenever the placeholder is shown/hidden. Lets a parent suppress
+   *  overlays (e.g. UVIS coord boxes) that only make sense on the real image.
+   *  Pass a stable callback (e.g. a useState setter) to avoid re-render loops. */
+  onFallbackChange?: (usingFallback: boolean) => void;
 };
 
 /**
@@ -16,7 +20,7 @@ type Props = Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> & {
  * cover etc.) just like the real image would. Bundled, so they work offline.
  */
 export default function ImageWithFallback({
-  src, alt = '', fallback = genericPlaceholder, className, ...rest
+  src, alt = '', fallback = genericPlaceholder, onFallbackChange, className, ...rest
 }: Props) {
   const [failed, setFailed] = useState(false);
 
@@ -25,6 +29,8 @@ export default function ImageWithFallback({
   useEffect(() => setFailed(false), [src]);
 
   const usePlaceholder = failed || !src;
+
+  useEffect(() => { onFallbackChange?.(usePlaceholder); }, [usePlaceholder, onFallbackChange]);
 
   return (
     <img

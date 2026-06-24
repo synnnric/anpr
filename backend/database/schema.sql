@@ -102,6 +102,9 @@ CREATE TABLE IF NOT EXISTS inspections (
     decision_reason          VARCHAR(255),
     decision_at              TIMESTAMP,
     decision_timeout_at      TIMESTAMP,
+    review_status            VARCHAR(16),          -- NULL · pending · approved · rejected (manual review of a SUSPECT)
+    reviewed_by              VARCHAR(64),          -- username of approver / rejecter
+    reviewed_at              TIMESTAMP,
     blocker_opened           SMALLINT NOT NULL DEFAULT 0,
     blocker_opened_at        TIMESTAMP,
     blocker_closed_at        TIMESTAMP,

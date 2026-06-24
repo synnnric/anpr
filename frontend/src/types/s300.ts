@@ -82,6 +82,9 @@ export interface Inspection {
   decision_reason: string | null;
   decision_at: string | null;
   decision_timeout_at: string | null;
+  review_status: 'pending' | 'approved' | 'rejected' | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
   blocker_opened: number;
   blocker_opened_at: string | null;
   blocker_closed_at: string | null;
@@ -101,6 +104,7 @@ export interface OperationEntry {
   action: string;
   status: 'success' | 'failed';
   error_message: string | null;
+  actor_username?: string | null;
   request_payload: unknown;
   response_payload: unknown;
   created_at: string;

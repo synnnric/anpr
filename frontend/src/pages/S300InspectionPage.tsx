@@ -8,6 +8,7 @@ import {
 import {
   listChannels, createChannel, updateChannel, deleteChannel,
   listInspections, getInspection, getChannelStatus,
+  approveInspection, rejectInspection,
   s300Come, s300Capture, s300Leave, s300ReadWorkStatus,
   s300EmergencyStop, s300ManualReset,
   connectS300Events,
@@ -17,13 +18,15 @@ import {
 } from '../services/s300Service';
 import type {
   S300Channel, Inspection, InspectionDetail,
-  VipPlate, ChannelStatus, OperationEntry, Decision,
+  VipPlate, ChannelStatus, OperationEntry, Decision, UvisCoord,
 } from '../types/s300';
 import { OPERATING_STATE_COLORS } from '../types/s300';
 import { useMqtt } from '../contexts/MqttContext';
+import { useAuth } from '../contexts/AuthContext';
 import ImageWithFallback from '../components/ImageWithFallback';
 import facePlaceholder from '../assets/face-placeholder.svg';
 import uvisPlaceholder from '../assets/uvis-placeholder.svg';
+import cameraPlaceholder from '../assets/camera-placeholder.svg';
 import { fmtPgTs, fmtPgTime } from '../utils/helpers';
 import { useI18n } from '../contexts/I18nContext';
 import type { TKey } from '../i18n/translations';
@@ -345,7 +348,7 @@ function LiveTab(props: {
       {/* Right column: inspection detail */}
       <div className="xl:col-span-8">
         {selected ? (
-          <InspectionDetailView insp={selected} />
+          <InspectionDetailView insp={selected} onAction={onAction} busy={busy} />
         ) : (
           <div className="bg-surface rounded-lg border border-border p-8 text-center">
             <ShieldCheck className="w-12 h-12 text-text-secondary mx-auto mb-3" />
@@ -425,6 +428,51 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
+/**
+ * UVIS scan image + foreign-object coordinate overlay.
+ *
+ * Coords come from the device in the scan's NATIVE pixel space, but the image
+ * is displayed scaled (max-w-full) — so we scale the boxes by displayed/natural
+ * size on load, clip them with overflow-hidden, and only draw them on the real
+ * image (never on the dummy placeholder, where they'd be meaningless and used
+ * to bleed into the panels below).
+ */
+function UvisImage({ src, coords }: { src: string | null; coords: UvisCoord[] }) {
+  const [usingDummy, setUsingDummy] = useState(false);
+  const [scale, setScale] = useState({ x: 1, y: 1 });
+  const showOverlay = !usingDummy && !!src && coords.length > 0;
+
+  return (
+    <div className="relative inline-block max-w-full overflow-hidden rounded border border-border">
+      <ImageWithFallback
+        src={src}
+        alt="UVIS"
+        fallback={uvisPlaceholder}
+        onFallbackChange={setUsingDummy}
+        className="block max-w-full w-auto"
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          if (img.naturalWidth > 0) {
+            setScale({ x: img.clientWidth / img.naturalWidth, y: img.clientHeight / img.naturalHeight });
+          }
+        }}
+      />
+      {showOverlay && coords.map((c, idx) => (
+        <div key={idx}
+          className="absolute border-2 border-red-500 bg-red-500/20"
+          style={{
+            left: c.x1 * scale.x, top: c.y1 * scale.y,
+            width: (c.x2 - c.x1) * scale.x, height: (c.y2 - c.y1) * scale.y,
+          }}>
+          <span className="absolute -top-5 left-0 text-[10px] bg-red-500 text-white px-1 rounded whitespace-nowrap">
+            {(Number(c.confidence) * 100).toFixed(0)}%
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ActionButton({ label, icon: Icon, color, disabled, busy, onClick }: {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -449,12 +497,17 @@ function ActionButton({ label, icon: Icon, color, disabled, busy, onClick }: {
 }
 
 // ============================ INSPECTION DETAIL ============================
-function InspectionDetailView({ insp }: { insp: InspectionDetail }) {
+function InspectionDetailView({ insp, onAction, busy }: {
+  insp: InspectionDetail;
+  onAction: (label: string, fn: () => Promise<unknown>) => Promise<void>;
+  busy: string | null;
+}) {
   const { t } = useI18n();
   const lastState = insp.current_operating_state ?? 0;
   return (
     <div className="space-y-4">
       <DecisionBanner insp={insp} />
+      <ReviewPanel insp={insp} onAction={onAction} busy={busy} />
       <div className="bg-surface border border-border rounded-lg p-4">
         <div className="flex items-start justify-between mb-3">
           <div>
@@ -471,9 +524,11 @@ function InspectionDetailView({ insp }: { insp: InspectionDetail }) {
         <Panel title={t('s300.video.title', { n: insp.video_streams.length })}>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {insp.video_streams.map(s => (
-              <div key={s.id} className="bg-black aspect-video rounded relative flex items-center justify-center">
+              <div key={s.id} className="bg-black aspect-video rounded relative overflow-hidden">
+                <ImageWithFallback src={null} alt={s.camera_code} fallback={cameraPlaceholder}
+                  className="w-full h-full object-cover" />
                 <div className="absolute top-1 left-1 text-[10px] font-mono text-white/80 bg-black/60 px-1.5 py-0.5 rounded">{s.camera_code}</div>
-                <div className="text-[10px] text-white/40 font-mono p-2 text-center break-all">{s.stream_url}</div>
+                <div className="absolute bottom-1 inset-x-1 text-[9px] text-white/40 font-mono text-center break-all">{s.stream_url}</div>
               </div>
             ))}
           </div>
@@ -509,24 +564,7 @@ function InspectionDetailView({ insp }: { insp: InspectionDetail }) {
                   </div>
                   <div className="text-[10px] text-text-secondary">{t('s300.uvis.objects', { n: u.object_count })}</div>
                 </div>
-                {u.image_url ? (
-                  <div className="relative inline-block">
-                    <ImageWithFallback src={u.image_url} alt="UVIS" fallback={uvisPlaceholder} className="max-w-full rounded border border-border" />
-                    {u.coords.map((c, idx) => (
-                      <div key={idx}
-                        className="absolute border-2 border-red-500 bg-red-500/20"
-                        style={{
-                          left: c.x1, top: c.y1, width: c.x2 - c.x1, height: c.y2 - c.y1,
-                        }}>
-                        <span className="absolute -top-5 left-0 text-[10px] bg-red-500 text-white px-1 rounded whitespace-nowrap">
-                          {(Number(c.confidence) * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <ImageWithFallback src={null} alt="UVIS" fallback={uvisPlaceholder} className="w-40 h-40 object-cover rounded border border-border" />
-                )}
+                <UvisImage src={u.image_url} coords={u.coords} />
               </div>
             ))}
           </div>
@@ -582,6 +620,67 @@ function DecisionBanner({ insp }: { insp: InspectionDetail }) {
   );
 }
 
+/**
+ * Manual-review gate for a SUSPECT inspection. Shows Approve / Reject buttons
+ * while review_status is 'pending', and a resolved line (with the username) once
+ * an operator has decided. Viewers can't act.
+ */
+function ReviewPanel({ insp, onAction, busy }: {
+  insp: InspectionDetail;
+  onAction: (label: string, fn: () => Promise<unknown>) => Promise<void>;
+  busy: string | null;
+}) {
+  const { t } = useI18n();
+  const { user } = useAuth();
+  if (insp.decision !== 'suspect') return null;
+
+  // Already decided → show who and when.
+  if (insp.review_status === 'approved' || insp.review_status === 'rejected') {
+    const approved = insp.review_status === 'approved';
+    return (
+      <div className={`rounded-lg p-3 text-sm border ${approved ? 'bg-green-500/10 border-green-500/40 text-green-300' : 'bg-red-500/10 border-red-500/40 text-red-300'}`}>
+        {t(approved ? 's300.review.approved_by' : 's300.review.rejected_by', {
+          by: insp.reviewed_by || '—',
+          ts: fmtPgTime(insp.reviewed_at),
+        })}
+      </div>
+    );
+  }
+
+  // Awaiting a human decision.
+  if (insp.review_status !== 'pending') return null;
+  const canReview = user?.role !== 'viewer';
+
+  return (
+    <div className="rounded-lg p-4 bg-amber-500/10 border border-amber-500/40">
+      <div className="flex items-center gap-2 text-amber-300 font-semibold mb-1">
+        <AlertTriangle className="w-4 h-4" /> {t('s300.review.title')}
+      </div>
+      <p className="text-xs text-text-secondary mb-3">
+        {insp.decision_reason || t('s300.review.desc')}
+      </p>
+      {canReview ? (
+        <div className="flex gap-2">
+          <button
+            disabled={!!busy}
+            onClick={() => onAction(t('s300.review.approve'), () => approveInspection(insp.id))}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold bg-green-600 hover:bg-green-500 text-white disabled:opacity-50">
+            <Check className="w-4 h-4" /> {t('s300.review.approve')}
+          </button>
+          <button
+            disabled={!!busy}
+            onClick={() => onAction(t('s300.review.reject'), () => rejectInspection(insp.id))}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold bg-red-600 hover:bg-red-500 text-white disabled:opacity-50">
+            <X className="w-4 h-4" /> {t('s300.review.reject')}
+          </button>
+        </div>
+      ) : (
+        <p className="text-xs text-amber-300/80 italic">{t('s300.review.viewer_blocked')}</p>
+      )}
+    </div>
+  );
+}
+
 function OpLogRow({ op }: { op: OperationEntry }) {
   const { t } = useI18n();
   const colors: Record<string, string> = {
@@ -596,6 +695,9 @@ function OpLogRow({ op }: { op: OperationEntry }) {
     manual_reset: 'text-amber-400',
     read_work_status: 'text-text-secondary',
     come_vip_bypass: 'text-violet-400',
+    review_required: 'text-amber-400',
+    review_approve: 'text-green-400',
+    review_reject: 'text-red-400',
   };
   const color = colors[op.action] || 'text-text-primary';
   const statusColor = op.status === 'success' ? 'text-green-400' : 'text-red-400';
@@ -606,6 +708,7 @@ function OpLogRow({ op }: { op: OperationEntry }) {
       <span className={`shrink-0 font-semibold ${color}`}>{op.action}</span>
       {isManual && <span className="text-amber-300 shrink-0">{t('s300.op.manual_tag')}</span>}
       <span className={`shrink-0 ${statusColor}`}>{op.status}</span>
+      {op.actor_username && <span className="text-sky-300 shrink-0">{t('s300.op.by', { user: op.actor_username })}</span>}
       {op.error_message && <span className="text-red-400 italic">{op.error_message}</span>}
     </div>
   );
