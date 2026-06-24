@@ -22,6 +22,8 @@ import type {
 import { OPERATING_STATE_COLORS } from '../types/s300';
 import { useMqtt } from '../contexts/MqttContext';
 import ImageWithFallback from '../components/ImageWithFallback';
+import facePlaceholder from '../assets/face-placeholder.svg';
+import uvisPlaceholder from '../assets/uvis-placeholder.svg';
 import { fmtPgTs, fmtPgTime } from '../utils/helpers';
 import { useI18n } from '../contexts/I18nContext';
 import type { TKey } from '../i18n/translations';
@@ -486,7 +488,7 @@ function InspectionDetailView({ insp }: { insp: InspectionDetail }) {
           <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
             {insp.face_images.map(f => (
               <div key={f.id} className="aspect-square bg-surface-dark border border-border rounded overflow-hidden">
-                <ImageWithFallback src={f.image_url} alt="face" className="w-full h-full object-cover" />
+                <ImageWithFallback src={f.image_url} alt="face" fallback={facePlaceholder} className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
@@ -509,7 +511,7 @@ function InspectionDetailView({ insp }: { insp: InspectionDetail }) {
                 </div>
                 {u.image_url ? (
                   <div className="relative inline-block">
-                    <ImageWithFallback src={u.image_url} alt="UVIS" className="max-w-full rounded border border-border" />
+                    <ImageWithFallback src={u.image_url} alt="UVIS" fallback={uvisPlaceholder} className="max-w-full rounded border border-border" />
                     {u.coords.map((c, idx) => (
                       <div key={idx}
                         className="absolute border-2 border-red-500 bg-red-500/20"
@@ -523,7 +525,7 @@ function InspectionDetailView({ insp }: { insp: InspectionDetail }) {
                     ))}
                   </div>
                 ) : (
-                  <ImageWithFallback src={null} alt="UVIS" className="w-40 h-40 rounded border border-border bg-surface-dark" />
+                  <ImageWithFallback src={null} alt="UVIS" fallback={uvisPlaceholder} className="w-40 h-40 object-cover rounded border border-border" />
                 )}
               </div>
             ))}
