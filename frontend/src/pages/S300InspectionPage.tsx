@@ -53,6 +53,7 @@ const OP_STATE_KEYS: Record<number, TKey> = {
 
 export default function S300InspectionPage() {
   const { t } = useI18n();
+  const { user } = useAuth();
   const [tab, setTab] = useState<TabKey>('live');
   const [channels, setChannels] = useState<S300Channel[]>([]);
   const [activeChannel, setActiveChannel] = useState<string>('');
@@ -61,6 +62,8 @@ export default function S300InspectionPage() {
   const [latestPlate, setLatestPlate] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [dismissedReviews, setDismissedReviews] = useState<Set<number>>(() => new Set());
   const lastEventRef = useRef<number>(0);
   const { recognitions } = useMqtt();
 
@@ -136,6 +139,29 @@ export default function S300InspectionPage() {
     }
   }, [showToast, refreshInspections, t]);
 
+  // Suspect vehicles waiting for a human decision — surfaced as a popup so the
+  // operator can act without opening the detail row.
+  const pendingReviews = useMemo(
+    () => inspections.filter(i => i.decision === 'suspect' && i.review_status === 'pending'),
+    [inspections],
+  );
+
+  // Auto-open when a NEW (not-yet-dismissed) review arrives; auto-close when the
+  // queue is empty.
+  useEffect(() => {
+    if (pendingReviews.some(i => !dismissedReviews.has(i.id))) setReviewModalOpen(true);
+    else if (pendingReviews.length === 0) setReviewModalOpen(false);
+  }, [pendingReviews, dismissedReviews]);
+
+  const closeReviewModal = useCallback(() => {
+    setDismissedReviews(prev => {
+      const next = new Set(prev);
+      pendingReviews.forEach(i => next.add(i.id));
+      return next;
+    });
+    setReviewModalOpen(false);
+  }, [pendingReviews]);
+
   const tabLabel = (k: TabKey) => t(`s300.tab.${k}` as 's300.tab.live');
 
   return (
@@ -210,6 +236,16 @@ export default function S300InspectionPage() {
         <div className={`fixed bottom-6 right-6 px-4 py-3 rounded-lg shadow-lg text-sm font-medium z-50 ${
           toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
         }`}>{toast.msg}</div>
+      )}
+
+      {reviewModalOpen && pendingReviews.length > 0 && (
+        <ReviewQueueModal
+          items={pendingReviews}
+          busy={busy}
+          onAction={act}
+          onClose={closeReviewModal}
+          canReview={user?.role !== 'viewer'}
+        />
       )}
     </div>
   );
@@ -677,6 +713,63 @@ function ReviewPanel({ insp, onAction, busy }: {
       ) : (
         <p className="text-xs text-amber-300/80 italic">{t('s300.review.viewer_blocked')}</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Auto-popup that lists every SUSPECT inspection awaiting manual review, with
+ * Approve / Reject right in the dialog — so the operator never has to open a
+ * detail row to act. Shown over the whole inspection page.
+ */
+function ReviewQueueModal({ items, busy, onAction, onClose, canReview }: {
+  items: Inspection[];
+  busy: string | null;
+  onAction: (label: string, fn: () => Promise<unknown>) => Promise<void>;
+  onClose: () => void;
+  canReview: boolean;
+}) {
+  const { t } = useI18n();
+  if (!items.length) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-surface border border-amber-500/50 rounded-lg w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+          <div className="flex items-center gap-2 text-amber-400 font-semibold">
+            <AlertTriangle className="w-5 h-5" /> {t('s300.review.modal_title', { n: items.length })}
+          </div>
+          <button onClick={onClose} className="text-text-secondary hover:text-text-primary" aria-label="close">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+          {items.map(i => (
+            <div key={i.id} className="bg-surface-dark border border-border rounded-md p-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-mono text-lg text-text-primary">{i.license_plate}</span>
+                <span className="text-[10px] text-text-secondary">{t('s300.detail.inspection_id', { id: i.id })} · {i.channel_no}</span>
+              </div>
+              {i.decision_reason && <p className="text-xs text-text-secondary mb-2">{i.decision_reason}</p>}
+              {canReview ? (
+                <div className="flex gap-2">
+                  <button disabled={!!busy}
+                    onClick={() => onAction(t('s300.review.approve'), () => approveInspection(i.id))}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold bg-green-600 hover:bg-green-500 text-white disabled:opacity-50">
+                    <Check className="w-4 h-4" /> {t('s300.review.approve')}
+                  </button>
+                  <button disabled={!!busy}
+                    onClick={() => onAction(t('s300.review.reject'), () => rejectInspection(i.id))}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold bg-red-600 hover:bg-red-500 text-white disabled:opacity-50">
+                    <X className="w-4 h-4" /> {t('s300.review.reject')}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-amber-300/80 italic">{t('s300.review.viewer_blocked')}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
