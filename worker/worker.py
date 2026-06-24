@@ -73,6 +73,11 @@ class Config:
     # Singleton lock — first worker to claim this loopback port wins.
     # Any second instance gets OSError and exits with a friendly message.
     singleton_port: int = int(os.environ.get("WORKER_SINGLETON_PORT", "18923"))
+    # Watchdog: if the heartbeat (cron-tick loop) goes silent longer than this,
+    # the process force-exits so a supervisor (systemd Restart=on-failure, or a
+    # plain re-run which auto-reclaims the lock) restarts it cleanly — instead of
+    # lingering as a zombie that holds the lock but does no work.
+    watchdog_timeout_s: float = float(os.environ.get("WATCHDOG_TIMEOUT_S", "60"))
 
 
 # ============================================================================
@@ -140,6 +145,9 @@ class State:
     lock = threading.Lock()
     stop = threading.Event()
     mqtt_client: "mqtt.Client | None" = None
+    # Liveness heartbeat: epoch of the last cron-tick iteration. The watchdog
+    # watches this; the tick loop bumps it every pass. 0.0 until main() seeds it.
+    last_tick_ok: float = 0.0
 
 
 def is_duplicate(sn: str, license_plain: str) -> bool:
@@ -310,19 +318,82 @@ def refresh_channels_loop() -> None:
 
 def cron_tick_loop() -> None:
     while not State.stop.is_set():
+        # Bump the liveness heartbeat first thing: this proves the loop thread is
+        # alive and running, independent of whether the backend answers. (A
+        # backend outage is not our fault and restarting wouldn't help, so the
+        # watchdog must not key off backend reachability — only off this loop.)
+        State.last_tick_ok = time.time()
         res = backend_post("/api/cron/tick", {})
-        if res and res.get("code") == 200:
-            for r in ((res.get("data") or {}).get("resolved") or []):
-                log.info(
-                    "tick: forced %s for inspection #%s (%s) — %s",
-                    r["decision"], r["inspectionId"], r["plate"], r["reason"],
-                )
-            for r in ((res.get("data") or {}).get("forced_complete") or []):
-                log.warning(
-                    "tick: watchdog force-completed stuck reset on inspection #%s (%s)",
-                    r["inspectionId"], r["plate"],
-                )
+        # Defensive parsing: a single malformed item must never kill this thread
+        # (that was the original zombie bug — an unguarded r["..."] KeyError).
+        try:
+            if res and res.get("code") == 200:
+                data = res.get("data") or {}
+                for r in (data.get("resolved") or []):
+                    log.info(
+                        "tick: forced %s for inspection #%s (%s) — %s",
+                        r.get("decision"), r.get("inspectionId"), r.get("plate"), r.get("reason"),
+                    )
+                for r in (data.get("forced_complete") or []):
+                    log.warning(
+                        "tick: watchdog force-completed stuck reset on inspection #%s (%s)",
+                        r.get("inspectionId"), r.get("plate"),
+                    )
+        except Exception:  # noqa: BLE001
+            log.exception("tick loop: error processing /api/cron/tick response")
         State.stop.wait(Config.tick_interval_s)
+
+
+def run_supervised(fn, name: str, restart_delay_s: float = 3.0) -> None:
+    """Run a background loop, restarting it if it ever raises.
+
+    Background loops are daemon threads; without this, one unhandled exception
+    silently kills the thread and leaves the worker a zombie — process alive and
+    holding the singleton lock, but no longer doing its job. We log the crash
+    and restart the loop until State.stop is set. A clean return means stop was
+    requested, so we exit the supervisor too.
+    """
+    while not State.stop.is_set():
+        try:
+            fn()
+            return
+        except Exception:  # noqa: BLE001
+            log.exception("thread '%s' crashed — restarting in %.0fs", name, restart_delay_s)
+            State.stop.wait(restart_delay_s)
+
+
+def watchdog_loop() -> None:
+    """Last-resort liveness backstop.
+
+    run_supervised handles ordinary crashes. This catches the kind of wedge it
+    cannot — a thread blocked indefinitely, an unforeseen deadlock — that would
+    otherwise reproduce the original zombie. If the heartbeat goes stale past
+    Config.watchdog_timeout_s we log CRITICAL and force-exit; systemd
+    'Restart=on-failure' (prod) brings us back, and any fresh start auto-reclaims
+    the singleton lock via acquire_singleton_lock().
+    """
+    # Require TWO consecutive stale checks before acting. A single stale reading
+    # can be a benign blip (e.g. a dev laptop resuming from sleep, where the tick
+    # thread just hasn't been rescheduled yet); a genuinely dead heartbeat stays
+    # stale across checks. This removes the only false-positive path.
+    interval = max(5.0, Config.watchdog_timeout_s / 2)
+    stale_strikes = 0
+    while not State.stop.is_set():
+        State.stop.wait(interval)
+        if State.stop.is_set():
+            break
+        age = time.time() - State.last_tick_ok
+        if age > Config.watchdog_timeout_s:
+            stale_strikes += 1
+            log.warning(
+                "watchdog: heartbeat stale for %.0fs (> %.0fs) — strike %d/2",
+                age, Config.watchdog_timeout_s, stale_strikes,
+            )
+            if stale_strikes >= 2:
+                log.critical("watchdog: heartbeat dead — force-exiting for restart")
+                os._exit(3)
+        else:
+            stale_strikes = 0
 
 
 def gen_id() -> str:
@@ -554,12 +625,20 @@ def main() -> int:
     log.info("  Tick interval:  %ss", Config.tick_interval_s)
     log.info("  Dedupe window:  %ss", Config.dedupe_window_s)
 
-    # Background threads
+    # Background threads — every loop runs under run_supervised so a crash is
+    # logged and auto-restarted instead of silently killing the thread. The
+    # watchdog is the backstop for wedges the supervisor can't catch.
+    State.last_tick_ok = time.time()  # seed before the watchdog can fire
+    loops = [
+        (refresh_settings_loop, "settings-loop"),
+        (refresh_channels_loop, "channels-loop"),
+        (cron_tick_loop,        "tick-loop"),
+        (mqtt_outbound_loop,    "outbound-loop"),
+        (watchdog_loop,         "watchdog"),
+    ]
     threads = [
-        threading.Thread(target=refresh_settings_loop, name="settings-loop", daemon=True),
-        threading.Thread(target=refresh_channels_loop, name="channels-loop", daemon=True),
-        threading.Thread(target=cron_tick_loop,        name="tick-loop",     daemon=True),
-        threading.Thread(target=mqtt_outbound_loop,    name="outbound-loop", daemon=True),
+        threading.Thread(target=run_supervised, args=(fn, name), name=name, daemon=True)
+        for fn, name in loops
     ]
     for t in threads:
         t.start()

@@ -1,8 +1,15 @@
 [Unit]
 Description=ANPR MQTT Worker — auto-trigger /come on plate detection (Python)
 Documentation=file:/opt/anpr-worker/README.md
-After=network-online.target mosquitto.service mariadb.service apache2.service
-Wants=network-online.target
+# AlmaLinux service names: httpd (not apache2). The worker speaks only MQTT +
+# backend HTTP — it never touches the DB directly — so the broker and the web
+# server are its only real upstreams (no postgresql/mariadb dependency).
+After=network-online.target mosquitto.service httpd.service
+Wants=network-online.target mosquitto.service
+# Bound the auto-restart so a hard failure can't hammer the box forever:
+# if it dies > 5 times in 60s, stop trying and surface the failure.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
