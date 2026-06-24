@@ -73,7 +73,9 @@ whether it triggers an inspection.
 | `plate_type`, `plate_color`, `car_color`, `confidence`, `direction`, `trigger_type` | INT | Raw ANPR metadata |
 | `is_fake_plate` | SMALLINT | 0/1 — flagged by the camera |
 | `anpr_device_sn` | VARCHAR(64) | Source camera |
-| `image_path`, `image_fragment_path` | VARCHAR(512) | Snapshot URLs |
+| `image_path`, `image_fragment_path` | VARCHAR(512) | Device-reported snapshot paths (often empty) |
+| `full_image_path` | VARCHAR(512) | Relative path to the saved full-scene snapshot (decoded from ivs_result `full_image_content`); the JPEG lives on disk under `uploads/vehicles/`, the DB holds only the path |
+| `small_image_path` | VARCHAR(512) | Relative path to the plate close-up (from `small_image_content`) |
 | `unique_id` | VARCHAR(64) | Per-camera unique detection ID |
 | `detected_at` | TIMESTAMP NOT NULL | When the camera captured it |
 | `created_at` | TIMESTAMP NOT NULL DEFAULT NOW() | When the backend recorded it |
@@ -94,6 +96,11 @@ These are deliberately separate so the platform doesn't prematurely mark an
 inspection complete on a transient `op=3` heartbeat. State only advances on
 HTTP events (`/come`, `/leave`) and the `reset-complete` callback.
 
+A **SUSPECT** verdict is held for human review: the row keeps `decision='suspect'`
+with `review_status='pending'` and **no side-effects run** (no road blocker, no
+`/leave`) until an operator approves or rejects it (recording `reviewed_by` /
+`reviewed_at`). Approve then runs the pass-path; reject runs the fail-path.
+
 | Column | Type | Notes |
 |---|---|---|
 | `id` | BIGSERIAL PK | |
@@ -104,6 +111,9 @@ HTTP events (`/come`, `/leave`) and the `reset-complete` callback.
 | `decision` | `inspection_decision` | `pending`, `pass`, `suspect`, `fail`, `vip_pass` |
 | `decision_reason` | VARCHAR(255) | Why (`Undercarriage clean`, `UVIS scan not received within timeout`, …) |
 | `decision_at`, `decision_timeout_at` | TIMESTAMP | When decided, when it would have timed out |
+| `review_status` | VARCHAR(16) | NULL normally; `pending` while a SUSPECT awaits manual review; `approved`/`rejected` once an operator decides |
+| `reviewed_by` | VARCHAR(64) | Username of the approver/rejecter |
+| `reviewed_at` | TIMESTAMP | When the human decided (UTC) |
 | `blocker_opened` | SMALLINT 0/1 | Did we lower the column? |
 | `blocker_opened_at`, `blocker_closed_at` | TIMESTAMP | Cron raises the column ~8s after open |
 | `auto_leave_called` | SMALLINT 0/1 | Did the platform call `/leave`? |
@@ -111,7 +121,7 @@ HTTP events (`/come`, `/leave`) and the `reset-complete` callback.
 | `come_called_at`, `inspection_started_at`, `inspection_ended_at`, `leave_called_at`, `reset_completed_at` | TIMESTAMP | Step-by-step timeline |
 
 Indexes: `idx_insp_channel`, `idx_insp_plate`, `idx_insp_state`,
-`idx_insp_vehicle`, `idx_insp_decision`, `idx_insp_timeout`.
+`idx_insp_vehicle`, `idx_insp_decision`, `idx_insp_timeout`, `idx_insp_review_status`.
 
 **Critical constraints:**
 
@@ -298,7 +308,11 @@ Simple key/value store. Hot-reloaded by the worker every 10s.
 | `auto_start_s300` | `0` | Worker auto-triggers `/come` on detection when `1` |
 | `auto_start_channel` | `RJ001` | Fallback channel when SN doesn't map |
 | `blocker_auto_close_sec` | `8` | Seconds the column stays Lowered after PASS |
-| `worker_last_seen_at` | (set at runtime) | Heartbeat written by every cron tick |
+| `entry_gate_open` | `0` | When `1`, the platform opens the ANPR camera's own gate (via `gpio_out`) at `/come` |
+| `entry_gate_io` | `0` | Camera output index (0-3) wired to that gate |
+| `entry_gate_value` | `2` | gpio_out value: 0=OFF, 1=ON, 2=Pulse |
+| `entry_gate_pulse_ms` | `1000` | Pulse duration (ms) when `entry_gate_value=2` |
+| `worker_last_seen_at` | (set at runtime) | Heartbeat written by every cron tick; stored as an offset-aware GMT+7 ISO-8601 string (not naive UTC) so it reads unambiguously |
 
 ### 12. Audit trail — `operation_log`
 

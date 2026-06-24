@@ -29,11 +29,24 @@ Both cameras speak **only MQTT**. The broker is the single integration point —
 the platform never opens a TCP socket to the camera, and the camera never POSTs
 HTTP back to the platform.
 
+**Authentication (required).** Mosquitto runs with `allow_anonymous false` and a
+`password_file`; every client must log in (default user `admin`). The camera
+carries the broker username/password in its MQTT config — anonymous connections
+are refused.
+
+**Two topic layouts are valid.** The documented form is
+`device/{sn}/message/up/{name}` (and `.../down/{name}`). Some real cameras put
+the **SN first** instead — `{sn}/device/message/up/{name}` (and
+`{sn}/device/message/down/{name}`). The worker subscribes to **both** up-layouts
+and publishes each down-command to **both** layouts, so a device gets it on
+whichever form it actually uses. Topics below show the documented form; the
+sn-first variant is equivalent.
+
 ### Up (camera → platform)
 
 | Topic | When | Payload (key fields) |
 |-------|------|----------------------|
-| `device/{sn}/message/up/ivs_result`     | every plate recognition | `AlarmInfoPlate.result.PlateResult.license` (base64), `confidence`, `direction`, `colorType`, `triggerType`, `unique_id` |
+| `device/{sn}/message/up/ivs_result`     | every plate recognition | `AlarmInfoPlate.result.PlateResult.license` (base64), `confidence`, `direction`, `colorType`, `triggerType`, `unique_id`; snapshot images `full_image_content` (full scene) + `small_image_content` (plate close-up), both base64 JPEG |
 | `device/{sn}/message/up/keep_alive`     | every 10 s | `timestamp` |
 | `device/{sn}/message/up/gpio_in`        | IO trigger (loop detector etc.) | `AlarmGioIn.TriggerResult.source`, `value` |
 | `device/{sn}/message/up/barr_gate_status` | physical gate up / down | `gate_status`, `connect_status`, `enable` |
@@ -43,9 +56,15 @@ HTTP back to the platform.
 | Topic | When the platform sends it | Payload (key fields) |
 |-------|---------------------------|----------------------|
 | `device/{sn}/message/down/white_list_operator` | exit-camera one-time-pass add (on entry PASS / VIP_PASS) and delete (on exit detection) | `operator_type`: `add` ‖ `delete`; for add: `dldb_rec[].plate`, `enable_time`, `overdue_time`; for delete: `plate` |
+| `device/{sn}/message/down/gpio_out`            | open the entry camera's own barrier gate (sent to the ENTRY camera at `/come`, on recognition) — protocol §7.2 | `io` 0-3 (relay), `value` 0=OFF ‖ 1=ON ‖ 2=Pulse, `delay` ms 500-5000. Camera ACKs on `.../down/gpio_out/reply` with `{code:200,...}` |
 | `device/{sn}/message/down/tts_voice`           | failure prompt ("please back out") | indexed audio |
 | `device/{sn}/message/down/gate_direct_open`    | force-open barrier (manual override) | — |
 | `device/{sn}/message/down/{cmd}/reply`         | camera ACKs every down command | `code`, original `id` |
+
+**Vehicle snapshot images.** From each `ivs_result` the worker extracts
+`full_image_content` + `small_image_content` and forwards them to the backend
+(`POST /api/vehicles`), which decodes and saves them as files; they're shown on
+the inspection detail (Inspeksi Kendaraan).
 
 **Whitelist mode on the exit camera** — the exit ANPR refuses any plate that's
 not on its local whitelist. The platform writes to that whitelist via
@@ -125,17 +144,21 @@ The worker has no UI, no persistent state, and no business logic beyond
 "recognise, log, route". It exists so the platform keeps running when nobody
 has the browser open.
 
+It authenticates to the broker with `MQTT_USERNAME` / `MQTT_PASSWORD` from
+`worker/.env` (the `admin` credentials), since anonymous is refused.
+
 ### Subscribes (MQTT)
 
 | Topic | Purpose |
 |-------|---------|
 | `device/+/message/up/+` | catches every camera message (ivs_result, keep_alive, gpio_in, barr_gate_status) |
+| `+/device/message/up/+` | same, for cameras using the sn-first topic layout |
 
 ### Publishes (MQTT)
 
 | Topic | Source |
 |-------|--------|
-| `device/{sn}/message/down/{cmd}` | drained from `mqtt_outbound_queue` |
+| `device/{sn}/message/down/{cmd}` **and** `{sn}/device/message/down/{cmd}` | drained from `mqtt_outbound_queue` — published to both layouts so the device receives it regardless of which it subscribes to |
 
 ### Backend calls (HTTP)
 
@@ -163,7 +186,8 @@ Two parallel channels:
   inspections, MQTT logs, channel admin, VIP plates, settings).
 - **MQTT WebSocket** to `ws://host:8083/mqtt` via `mqtt.js` — the live
   recognition panel, heartbeat indicator, IO events. **Same topics as the
-  cameras**, just consumed in JS.
+  cameras**, just consumed in JS. The WS connection must supply the broker
+  credentials (`admin`) too — anonymous is refused.
 
 The frontend never triggers `/come`. That decision was deliberately moved into
 the worker so the platform keeps logging and inspecting with the browser
@@ -185,6 +209,8 @@ closed.
 
 3. backend
    ├─ creates inspection row (state=pending)
+   ├─ opens the ENTRY camera's barrier: INSERT mqtt_outbound_queue (gpio_out)
+   │     — the pre-inspection gate, opened on recognition so the car can pull in
    ├─ checks vip_plates → if hit, short-circuit to vip_pass + open blocker
    └─ HTTP POST → {s300_base_url}/come/RJ001
 
@@ -196,10 +222,14 @@ closed.
 
 5. backend.DecisionEngine sees UVIS arrive → decides pass / suspect / fail
    └─ DecisionExecutor branches:
-      pass / suspect / vip_pass:
+      pass / vip_pass:
         ├─ HTTP POST open road blocker  /open/operation (rb_ip:rb_port)
         ├─ INSERT mqtt_outbound_queue                  (white_list_operator → exit cam, add)
         └─ HTTP GET /leave/{ch}                        (release vehicle)
+      suspect:
+        └─ HOLD — no auto action. Wait for an operator to approve or reject:
+             approve → same as pass (open road blocker + whitelist + /leave)
+             reject  → same as fail (back-up audio + deny + /leave)
       fail:
         ├─ INSERT mqtt_outbound_queue                  (tts_voice "back out")
         ├─ mark visits row denied_entry

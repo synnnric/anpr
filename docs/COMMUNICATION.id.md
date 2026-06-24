@@ -31,11 +31,23 @@ Kedua kamera **hanya berbicara MQTT**. Broker adalah satu-satunya titik
 integrasi — platform tidak pernah membuka TCP socket ke kamera, dan kamera
 tidak pernah mem-POST HTTP balik ke platform.
 
+**Autentikasi (wajib).** Mosquitto berjalan dengan `allow_anonymous false` dan
+`password_file`; setiap klien harus login (user default `admin`). Kamera membawa
+username/password broker di konfigurasi MQTT-nya — koneksi anonim ditolak.
+
+**Dua layout topik valid.** Bentuk terdokumentasi adalah
+`device/{sn}/message/up/{name}` (dan `.../down/{name}`). Sebagian kamera asli
+menaruh **SN di depan** — `{sn}/device/message/up/{name}` (dan
+`{sn}/device/message/down/{name}`). Worker subscribe ke **kedua** layout up dan
+mem-publish setiap perintah down ke **kedua** layout, sehingga perangkat
+menerimanya pada bentuk apa pun yang dipakainya. Topik di bawah memakai bentuk
+terdokumentasi; varian sn-first setara.
+
 ### Up (kamera → platform)
 
 | Topik | Kapan | Payload (field kunci) |
 |-------|------|----------------------|
-| `device/{sn}/message/up/ivs_result`     | setiap pengenalan plat | `AlarmInfoPlate.result.PlateResult.license` (base64), `confidence`, `direction`, `colorType`, `triggerType`, `unique_id` |
+| `device/{sn}/message/up/ivs_result`     | setiap pengenalan plat | `AlarmInfoPlate.result.PlateResult.license` (base64), `confidence`, `direction`, `colorType`, `triggerType`, `unique_id`; gambar snapshot `full_image_content` (seluruh adegan) + `small_image_content` (close-up plat), keduanya JPEG base64 |
 | `device/{sn}/message/up/keep_alive`     | setiap 10 detik | `timestamp` |
 | `device/{sn}/message/up/gpio_in`        | trigger IO (loop detector dll.) | `AlarmGioIn.TriggerResult.source`, `value` |
 | `device/{sn}/message/up/barr_gate_status` | barrier fisik naik / turun | `gate_status`, `connect_status`, `enable` |
@@ -45,9 +57,15 @@ tidak pernah mem-POST HTTP balik ke platform.
 | Topik | Kapan platform mengirimnya | Payload (field kunci) |
 |-------|---------------------------|----------------------|
 | `device/{sn}/message/down/white_list_operator` | add one-time-pass di kamera exit (saat entry PASS / VIP_PASS) dan delete (saat deteksi exit) | `operator_type`: `add` ‖ `delete`; untuk add: `dldb_rec[].plate`, `enable_time`, `overdue_time`; untuk delete: `plate` |
+| `device/{sn}/message/down/gpio_out`            | buka gerbang barrier milik kamera entry (dikirim ke kamera ENTRY saat `/come`, saat pengenalan) — protokol §7.2 | `io` 0-3 (relay), `value` 0=OFF ‖ 1=ON ‖ 2=Pulse, `delay` ms 500-5000. Kamera meng-ACK di `.../down/gpio_out/reply` dengan `{code:200,...}` |
 | `device/{sn}/message/down/tts_voice`           | prompt kegagalan ("silakan mundur") | audio terindeks |
 | `device/{sn}/message/down/gate_direct_open`    | paksa-buka barrier (manual override) | — |
 | `device/{sn}/message/down/{cmd}/reply`         | kamera meng-ACK setiap perintah down | `code`, `id` asli |
+
+**Gambar snapshot kendaraan.** Dari setiap `ivs_result`, worker mengekstrak
+`full_image_content` + `small_image_content` dan meneruskannya ke backend
+(`POST /api/vehicles`), yang mendekode dan menyimpannya sebagai file; ditampilkan
+di detail inspeksi (Inspeksi Kendaraan).
 
 **Mode whitelist pada kamera exit** — ANPR exit menolak plat apa pun yang
 tidak ada di whitelist lokalnya. Platform menulis ke whitelist tersebut melalui
@@ -106,7 +124,7 @@ menandai inspeksi sebagai selesai — platform menunggu `reset-complete`.
 `GET /open/getStatus/{deviceNo}`), dengan `rb_board_id` + `rb_device_no` +
 `rb_column_num` perangkat dibawa di dalam body JSON. Dipanggil hanya oleh
 `RoadBlockerClient` backend dari `DecisionExecutor` saat keputusannya
-PASS / SUSPECT / VIP_PASS. Backend hanya MENURUNKAN (membuka); menaikkan adalah
+PASS / VIP_PASS. Backend hanya MENURUNKAN (membuka); menaikkan adalah
 keputusan perangkat keras (`blocker_close_mode='hardware'`). Lihat
 `ROAD BLOCKER API.pdf`.
 
@@ -128,17 +146,21 @@ Worker tidak punya UI, tidak punya state persisten, dan tidak punya logika
 bisnis selain "kenali, log, route". Worker ada agar platform tetap berjalan
 ketika tidak ada yang membuka browser.
 
+Worker mengautentikasi ke broker dengan `MQTT_USERNAME` / `MQTT_PASSWORD` dari
+`worker/.env` (kredensial `admin`), karena anonim ditolak.
+
 ### Subscribe (MQTT)
 
 | Topik | Tujuan |
 |-------|---------|
 | `device/+/message/up/+` | menangkap setiap pesan kamera (ivs_result, keep_alive, gpio_in, barr_gate_status) |
+| `+/device/message/up/+` | sama, untuk kamera yang memakai layout topik sn-first |
 
 ### Publish (MQTT)
 
 | Topik | Sumber |
 |-------|--------|
-| `device/{sn}/message/down/{cmd}` | dikuras dari `mqtt_outbound_queue` |
+| `device/{sn}/message/down/{cmd}` **dan** `{sn}/device/message/down/{cmd}` | dikuras dari `mqtt_outbound_queue` — di-publish ke kedua layout agar perangkat menerimanya pada bentuk apa pun yang di-subscribe-nya |
 
 ### Panggilan backend (HTTP)
 
@@ -167,7 +189,8 @@ Dua kanal paralel:
   settings).
 - **MQTT WebSocket** ke `ws://host:8083/mqtt` via `mqtt.js` — panel
   pengenalan live, indikator heartbeat, event IO. **Topik yang sama dengan
-  kamera**, hanya saja dikonsumsi di JS.
+  kamera**, hanya saja dikonsumsi di JS. Koneksi WS harus menyertakan
+  kredensial broker (`admin`) — anonim ditolak.
 
 Frontend tidak pernah men-trigger `/come`. Keputusan itu sengaja dipindahkan
 ke worker agar platform tetap mencatat dan menginspeksi meskipun browser
@@ -189,6 +212,8 @@ ditutup.
 
 3. backend
    ├─ membuat baris inspection (state=pending)
+   ├─ membuka gerbang kamera ENTRY: INSERT mqtt_outbound_queue (gpio_out)
+   │     — gerbang pra-inspeksi, dibuka saat pengenalan agar mobil bisa masuk
    ├─ cek vip_plates → jika cocok, short-circuit ke vip_pass + buka blocker
    └─ HTTP POST → {s300_base_url}/come/RJ001
 
@@ -200,10 +225,14 @@ ditutup.
 
 5. backend.DecisionEngine melihat UVIS tiba → memutuskan pass / suspect / fail
    └─ DecisionExecutor bercabang:
-      pass / suspect / vip_pass:
+      pass / vip_pass:
         ├─ buka road blocker via HTTP POST /open/operation (rb_ip:rb_port)
         ├─ INSERT mqtt_outbound_queue                  (white_list_operator → kamera exit, add)
         └─ HTTP GET /leave/{ch}                        (lepaskan kendaraan)
+      suspect:
+        └─ TAHAN — tidak ada aksi otomatis. Tunggu operator approve atau reject:
+             approve → sama seperti pass (buka road blocker + whitelist + /leave)
+             reject  → sama seperti fail (audio mundur + deny + /leave)
       fail:
         ├─ INSERT mqtt_outbound_queue                  (tts_voice "mundur")
         ├─ tandai baris visits denied_entry

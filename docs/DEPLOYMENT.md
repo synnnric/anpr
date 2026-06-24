@@ -61,8 +61,8 @@ DB_NAME="anpr_s300"
 DB_HOST="127.0.0.1"
 DB_PORT="5432"
 
-MQTT_USER=""          # leave empty for anonymous (LAN-only) or set for auth
-MQTT_PASS=""
+MQTT_USER="admin"     # broker auth is REQUIRED (allow_anonymous false) — see §4.3
+MQTT_PASS="change-mqtt-pass"
 
 # Auth — SSO from a parent portal (no local password). See docs/DEV_LOGIN.md.
 
@@ -244,8 +244,8 @@ allow_anonymous false
 password_file /etc/mosquitto/passwd
 CFG
 
-# Create credentials
-sudo mosquitto_passwd -c -b /etc/mosquitto/passwd "${MQTT_USER:-anpr}" "${MQTT_PASS:-change-mqtt-pass}"
+# Create credentials (user `admin` is the convention used across this guide)
+sudo mosquitto_passwd -c -b /etc/mosquitto/passwd "${MQTT_USER:-admin}" "${MQTT_PASS:-change-mqtt-pass}"
 sudo chown mosquitto:mosquitto /etc/mosquitto/passwd
 sudo chmod 640 /etc/mosquitto/passwd
 
@@ -253,13 +253,22 @@ sudo systemctl restart mosquitto
 sudo systemctl enable  mosquitto
 
 # Verify
-mosquitto_sub -h localhost -u "${MQTT_USER:-anpr}" -P "${MQTT_PASS:-change-mqtt-pass}" -t test &
-mosquitto_pub -h localhost -u "${MQTT_USER:-anpr}" -P "${MQTT_PASS:-change-mqtt-pass}" -t test -m hello
+mosquitto_sub -h localhost -u "${MQTT_USER:-admin}" -P "${MQTT_PASS:-change-mqtt-pass}" -t test &
+mosquitto_pub -h localhost -u "${MQTT_USER:-admin}" -P "${MQTT_PASS:-change-mqtt-pass}" -t test -m hello
 ```
 
-> **LAN security note.** If your server is on a trusted private LAN with only the
-> cameras + worker, you can leave `allow_anonymous true` and skip the password
-> file. If anything else can reach :1883, use auth.
+> **Authentication is required.** The broker runs with `allow_anonymous false`, so
+> **every** client must supply the credentials (user `admin` above):
+> - **Worker** — `MQTT_USERNAME`/`MQTT_PASSWORD` in `/opt/anpr-worker/.env` (§4.4).
+> - **Cameras** — set the username/password in each camera's MQTT config.
+> - **Dashboard live panel** (MQTT-over-WebSocket on :8083) — enter the credentials
+>   on the **Koneksi MQTT** page.
+> - **Debug** — add `-u admin -P <pass>` to every `mosquitto_sub`/`mosquitto_pub`.
+>
+> The `password_file` must be **readable by the account the broker runs as** — on
+> this systemd/Debian install that's the `mosquitto` user (the `chown` above); on
+> other OSes (e.g. the Windows service running as LocalSystem) grant that account
+> read access, or the broker fails to start with the file in place.
 
 ### 4.4 Python worker (systemd)
 
@@ -273,7 +282,7 @@ sudo chown -R anpr:anpr /opt/anpr-worker
 sudo -u anpr cp /opt/anpr-worker/.env.example /opt/anpr-worker/.env
 sudo nano /opt/anpr-worker/.env
 #   MQTT_BROKER=mqtt://127.0.0.1:1883
-#   MQTT_USERNAME=anpr
+#   MQTT_USERNAME=admin            # required — must match the broker password file
 #   MQTT_PASSWORD=change-mqtt-pass
 #   BACKEND_URL=http://127.0.0.1
 #   FALLBACK_CHANNEL=RJ001
@@ -341,6 +350,12 @@ Once everything is up:
 3. Go back to `RJ001` and set `Paired exit channel` = `RJ002`.
 
 4. **Settings** → enable **Auto-start S300 Inspection** so plates trigger /come automatically.
+   - *Optional* **entry gate** — if the entry ANPR camera drives its own barrier through
+     a GPIO relay, set `entry_gate_open=1` so the platform pulses it on recognition (at
+     `/come`, via `gpio_out`). Tune `entry_gate_io` (output index 0–3, default `0`),
+     `entry_gate_value` (`0`=off, `1`=on, `2`=pulse — default `2`) and
+     `entry_gate_pulse_ms` (default `1000`). Leave `entry_gate_open=0` (default) when the
+     entry barrier is the road blocker only.
 
 5. **VIP** tab → add any VIP plates you want to bypass S300.
 

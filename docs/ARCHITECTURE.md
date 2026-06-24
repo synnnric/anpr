@@ -71,10 +71,10 @@ sequenceDiagram
   participant X as Exit ANPR
 
   V->>E: arrives at entry
-  E->>E: detect plate, open entry barrier (local logic)
-  E->>M: publish ivs_result (plate XYZ)
+  E->>E: detect plate (recognition trigger)
+  E->>M: publish ivs_result (plate XYZ + full/small snapshot images)
   M->>W: deliver
-  W->>B: POST /api/vehicles (audit)
+  W->>B: POST /api/vehicles (audit + snapshot images → uploads/vehicles)
   W->>B: GET /api/channels/by-no/RJ001/status
   B-->>W: busy=false
   W->>B: POST /api/s300/come/RJ001 {licensePlateNo:XYZ}
@@ -88,6 +88,8 @@ sequenceDiagram
     S-->>B: 200
   end
 
+  Note over B,M: At /come the backend opens the ANPR entry gate via gpio_out<br/>(MqttOutbound::gateOpen → worker publish), if setting entry_gate_open=1
+
   V->>V: drives onto inspection bay (UVIS scan, barrier closes)
   S->>B: POST /overseas/s300/work-status op=1 (inspecting)
   S->>B: POST /overseas/s300/face-image (URLs)
@@ -95,7 +97,7 @@ sequenceDiagram
   B->>B: DecisionEngine evaluates
   Note over B: Rules:<br/>imageType=0 → pass<br/>imageType=1 → suspect<br/>op=5/fake/timeout30s → fail
 
-  alt pass / suspect / vip
+  alt pass / vip_pass (auto)
     B->>RB: POST /open/operation (action=down)
     B->>DB: enqueue mqtt_outbound (whitelist add XYZ → exit camera SN)
     W->>DB: poll mqtt_outbound (pending)
@@ -107,6 +109,9 @@ sequenceDiagram
     S->>B: POST /overseas/s300/reset-complete
     B->>DB: inspection state=completed, channel free
     V->>V: road blocker open → drives to parking
+  else suspect (manual review)
+    B->>DB: review_status=pending — HELD (no blocker, no /leave)
+    Note over B,X: Operator Approve → same as pass (open blocker + whitelist + leave)<br/>Reject → same as fail (back-up audio + denied + leave)
   else fail
     B->>S: POST audio-prompt (back-up message)
     B->>DB: visit status=denied_entry
@@ -165,8 +170,10 @@ flowchart TD
   evalDec -->|no UVIS within 30s| timeoutFail[decision = fail<br/>UVIS timeout]
 
   pass --> action1
-  suspect --> action1
   vipPass --> action1
+  suspect --> review{review_status = pending<br/>HELD for manual review<br/>operator Approve / Reject}
+  review -->|Approve| action1
+  review -->|Reject| action2
   action1[Open road blocker<br/>+ Enqueue exit-camera whitelist ADD] --> autoLeave
 
   eqFail --> action2
@@ -176,6 +183,13 @@ flowchart TD
 
   autoLeave[Auto-call /leave to S300] --> finish([Wait for reset-complete callback<br/>or 30s watchdog])
 ```
+
+> **SUSPECT is no longer auto-passed.** A `suspect` verdict sets `review_status =
+> pending` and stops — no road blocker, no `/leave` — until an operator resolves it
+> via the **Approve/Reject** buttons (and the auto-popup review-queue modal) on the
+> Inspeksi Kendaraan page. Approve runs the pass actions; Reject runs the fail actions.
+> Both record the actor's username in the operation log (`review_approve` / `review_reject`).
+> The separate **ANPR entry gate** (`gpio_out`) opens earlier, at `/come`, regardless of the verdict.
 
 ## 6. Visit state machine
 
@@ -218,9 +232,9 @@ denied_entry  (decision=fail) 6  (Self-test)
 | Table | Purpose |
 |---|---|
 | `channels` | One row per lane / gate (entry or exit) — paired via `paired_channel_id` |
-| `vehicles` | Audit log of every ANPR plate detection (entry and exit) |
+| `vehicles` | Audit log of every ANPR plate detection (entry and exit). `full_image_path` / `small_image_path` = saved `ivs_result` snapshots (full scene + plate close-up; files in `uploads/vehicles/`, DB stores only the path) |
 | `visits` | One row per "entry → exit" cycle. Status: active, completed, orphan_exit, denied_entry |
-| `inspections` | One row per S300 inspection lifecycle |
+| `inspections` | One row per S300 inspection lifecycle. `review_status` (pending/approved/rejected) + `reviewed_by` + `reviewed_at` track manual review of a SUSPECT |
 | `inspection_status_logs` | Every work-status push from S300 |
 | `inspection_face_images` | Face capture URLs |
 | `inspection_video_streams` | RTSP stream addresses for the 6 robot-arm cameras |
@@ -230,7 +244,7 @@ denied_entry  (decision=fail) 6  (Self-test)
 | `audio_prompts` | Custom audio prompts pushed to S300 |
 | `users` | Operator accounts |
 | `operation_log` | Audit trail of every backend action |
-| `settings` | Key-value system settings (`auto_start_s300`, `auto_start_channel`) |
+| `settings` | Key-value system settings (`auto_start_s300`, `auto_start_channel`, `blocker_close_mode`, ANPR-gate `entry_gate_open`/`entry_gate_io`/`entry_gate_value`/`entry_gate_pulse_ms`, `worker_last_seen_at` heartbeat) |
 | `inbound_events_raw` | Raw S300 callbacks (for debugging/replay) |
 | `mqtt_outbound_queue` | Pending MQTT commands the worker should publish |
 
