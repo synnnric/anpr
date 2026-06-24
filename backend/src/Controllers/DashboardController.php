@@ -61,14 +61,14 @@ class DashboardController {
             "SELECT value, updated_at FROM settings WHERE key_name = 'worker_last_seen_at'"
         );
         $workerLastAt = $hb['value'] ?? null;
-        $workerAge = $workerLastAt ? max(0, $nowEpoch - strtotime($workerLastAt . ' UTC')) : null;
+        $workerDt = self::parsePgUtc($workerLastAt);
+        $workerAge = $workerDt ? max(0, $nowEpoch - $workerDt->getTimestamp()) : null;
 
         // --- MQTT data flow (separate from "is the broker reachable") ---
         $row = Database::fetchOne("SELECT MAX(received_at) AS last_at FROM mqtt_inbound_log");
         $lastInboundAt = $row['last_at'] ?? null;
-        $lastInboundSec = $lastInboundAt
-            ? max(0, $nowEpoch - strtotime($lastInboundAt . ' UTC'))
-            : null;
+        $inboundDt = self::parsePgUtc($lastInboundAt);
+        $lastInboundSec = $inboundDt ? max(0, $nowEpoch - $inboundDt->getTimestamp()) : null;
 
         return [
             'now_utc'              => gmdate('c'),
@@ -76,12 +76,12 @@ class DashboardController {
             'backend_version'      => $GLOBALS['APP_CONFIG']['app']['version'] ?? '?',
             'db_version'           => $dbVerShort,
             'db_latency_ms'        => $dbLatencyMs,
-            'last_inbound_at'      => $lastInboundAt,
+            'last_inbound_at'      => self::jakartaIso($lastInboundAt),
             'last_inbound_age_sec' => $lastInboundSec,
             'broker_reachable'     => $brokerReachable,
             'broker_latency_ms'    => $brokerLatencyMs,
             'broker_error'         => $brokerReachable ? null : ($errstr ?: "errno_{$errno}"),
-            'worker_last_seen_at'  => $workerLastAt,
+            'worker_last_seen_at'  => self::jakartaIso($workerLastAt),
             'worker_last_seen_age' => $workerAge,
             'backend_status' => 'ok',
             'db_status'      => 'ok',
@@ -313,5 +313,30 @@ class DashboardController {
     private static function healthFromAge(?int $ageSec, int $stale): string {
         if ($ageSec === null) return 'unknown';
         return $ageSec <= $stale ? 'ok' : 'stale';
+    }
+
+    /**
+     * Parse a DB timestamp into a UTC-anchored DateTimeImmutable.
+     * Naive strings (the Postgres default — stored in UTC) are tagged UTC;
+     * offset-aware strings (Z or ±HH:MM, e.g. the worker heartbeat) parse as-is.
+     * Returns null on empty/unparseable input.
+     */
+    private static function parsePgUtc(?string $ts): ?\DateTimeImmutable {
+        if (!$ts) return null;
+        $ts = trim($ts);
+        $hasTz = preg_match('/(Z|[+-]\d{2}:?\d{2})$/', $ts) === 1;
+        try {
+            return $hasTz
+                ? new \DateTimeImmutable($ts)
+                : new \DateTimeImmutable($ts, new \DateTimeZone('UTC'));
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    /** Render a DB timestamp as ISO 8601 in GMT+7 (Asia/Jakarta), or null. */
+    private static function jakartaIso(?string $ts): ?string {
+        $d = self::parsePgUtc($ts);
+        return $d ? $d->setTimezone(new \DateTimeZone('Asia/Jakarta'))->format('c') : null;
     }
 }

@@ -12,14 +12,18 @@ class CronController {
      * The frontend AutoTrigger calls this every 5 seconds while open.
      */
     public function tick(Request $req): array {
-        $now = gmdate('Y-m-d H:i:s');
+        $now = gmdate('Y-m-d H:i:s');   // UTC — used for every timeout comparison below
 
         // Worker heartbeat — the worker calls /api/cron/tick every 5s, so this
-        // setting is the freshest signal we have that the worker is alive.
+        // setting is the freshest signal we have that the worker is alive. Store it
+        // as an offset-aware ISO 8601 string in GMT+7 (date_default_timezone is
+        // Asia/Jakarta) so anyone reading /api/settings or the dashboard sees an
+        // unambiguous local time — unlike the naive-UTC strings the rest of the DB
+        // holds. (This value is only ever displayed, never compared in SQL.)
         Database::query(
             "INSERT INTO settings (key_name, value, updated_at) VALUES ('worker_last_seen_at', :v, NOW())
              ON CONFLICT (key_name) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-            ['v' => $now]
+            ['v' => date('c')]
         );
 
         // 1) Force a decision on inspections that have exceeded their UVIS timeout
