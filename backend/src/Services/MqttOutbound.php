@@ -52,4 +52,19 @@ class MqttOutbound {
             'plate' => $licensePlate,
         ]);
     }
+
+    /**
+     * Pulse a camera's GPIO output relay via MQTT `gpio_out` (protocol §7.2) —
+     * used to open the camera's own barrier gate.
+     *   io    : output index [0,3] (which relay the barrier is wired to)
+     *   value : 0=OFF, 1=ON, 2=Pulse (ON then OFF)
+     *   delay : pulse duration ms, clamped to [500,5000]
+     */
+    public static function gateOpen(string $cameraSn, int $io = 0, int $value = 2, int $delayMs = 1000): int {
+        return self::enqueue($cameraSn, 'gpio_out', [
+            'delay' => max(500, min(5000, $delayMs)),
+            'io'    => max(0, min(3, $io)),
+            'value' => $value,
+        ]);
+    }
 }

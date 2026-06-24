@@ -78,6 +78,7 @@ class DecisionExecutor {
         // Branch on decision
         if (in_array($decision, ['pass', 'vip_pass'], true)) {
             self::openBlocker($inspection, $channel, $decision);
+            self::openEntryGate($inspection, $channel);
             self::whitelistOnExitCamera($inspection, $channel);
         } else if ($decision === 'fail') {
             self::sendBackUpAudio($inspection, $channel);
@@ -137,6 +138,7 @@ class DecisionExecutor {
 
         if ($approved) {
             self::openBlocker($inspection, $channel, 'suspect');
+            self::openEntryGate($inspection, $channel);
             self::whitelistOnExitCamera($inspection, $channel);
         } else {
             self::sendBackUpAudio($inspection, $channel);
@@ -186,6 +188,58 @@ class DecisionExecutor {
         if ($visit && $visit['status'] === 'active') {
             VisitService::markEntryDenied((int)$visit['id'], $reason);
         }
+    }
+
+    /**
+     * Plan B: command the ENTRY ANPR camera to open its OWN barrier gate by
+     * pulsing a GPIO output relay (gpio_out, protocol §7.2) — in addition to the
+     * road blocker. Off by default; enable + tune via settings:
+     *   entry_gate_open      '1' to enable (default '0')
+     *   entry_gate_io        output index 0-3 (default '0')
+     *   entry_gate_value     0=OFF 1=ON 2=Pulse (default '2')
+     *   entry_gate_pulse_ms  pulse duration ms (default '1000')
+     */
+    private static function openEntryGate(array $inspection, array $channel): void {
+        $cfg = self::entryGateConfig();
+        if (!$cfg['enabled']) return;
+
+        $sn = $channel['anpr_device_sn'] ?? null;
+        if (!$sn) {
+            InspectionService::logOperation([
+                'channel_no' => $inspection['channel_no'],
+                'inspection_id' => $inspection['id'],
+                'action' => 'open_entry_gate_skipped',
+                'request_payload' => ['reason' => 'channel has no anpr_device_sn'],
+                'status' => 'failed',
+                'error_message' => 'set anpr_device_sn on the entry channel',
+            ]);
+            return;
+        }
+
+        $queueId = MqttOutbound::gateOpen($sn, $cfg['io'], $cfg['value'], $cfg['delay_ms']);
+        InspectionService::logOperation([
+            'channel_no' => $inspection['channel_no'],
+            'inspection_id' => $inspection['id'],
+            'action' => 'open_entry_gate',
+            'request_payload' => [
+                'cameraSn' => $sn, 'io' => $cfg['io'],
+                'value' => $cfg['value'], 'delay' => $cfg['delay_ms'], 'queueId' => $queueId,
+            ],
+            'status' => 'success',
+        ]);
+    }
+
+    private static function entryGateConfig(): array {
+        $get = function (string $key, string $default): string {
+            $row = Database::fetchOne('SELECT value FROM settings WHERE key_name = ?', [$key]);
+            return $row['value'] ?? $default;
+        };
+        return [
+            'enabled'  => in_array((string)$get('entry_gate_open', '0'), ['1', 'true', 'True'], true),
+            'io'       => (int)$get('entry_gate_io', '0'),
+            'value'    => (int)$get('entry_gate_value', '2'),
+            'delay_ms' => (int)$get('entry_gate_pulse_ms', '1000'),
+        ];
     }
 
     private static function openBlocker(array $inspection, array $channel, string $decision): void {
