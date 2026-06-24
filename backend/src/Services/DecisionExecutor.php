@@ -78,7 +78,6 @@ class DecisionExecutor {
         // Branch on decision
         if (in_array($decision, ['pass', 'vip_pass'], true)) {
             self::openBlocker($inspection, $channel, $decision);
-            self::openEntryGate($inspection, $channel);
             self::whitelistOnExitCamera($inspection, $channel);
         } else if ($decision === 'fail') {
             self::sendBackUpAudio($inspection, $channel);
@@ -138,7 +137,6 @@ class DecisionExecutor {
 
         if ($approved) {
             self::openBlocker($inspection, $channel, 'suspect');
-            self::openEntryGate($inspection, $channel);
             self::whitelistOnExitCamera($inspection, $channel);
         } else {
             self::sendBackUpAudio($inspection, $channel);
@@ -191,15 +189,17 @@ class DecisionExecutor {
     }
 
     /**
-     * Plan B: command the ENTRY ANPR camera to open its OWN barrier gate by
-     * pulsing a GPIO output relay (gpio_out, protocol §7.2) — in addition to the
-     * road blocker. Off by default; enable + tune via settings:
+     * Open the ENTRY ANPR camera's OWN barrier gate by pulsing a GPIO output
+     * relay (gpio_out, protocol §7.2). This is the PRE-INSPECTION gate: it is
+     * called from /come (on plate recognition) so the vehicle can drive into
+     * the inspection area — UVIS / S300 / road blocker all come afterwards.
+     * Off by default; enable + tune via settings:
      *   entry_gate_open      '1' to enable (default '0')
      *   entry_gate_io        output index 0-3 (default '0')
      *   entry_gate_value     0=OFF 1=ON 2=Pulse (default '2')
      *   entry_gate_pulse_ms  pulse duration ms (default '1000')
      */
-    private static function openEntryGate(array $inspection, array $channel): void {
+    public static function openEntryGate(array $inspection, array $channel): void {
         $cfg = self::entryGateConfig();
         if (!$cfg['enabled']) return;
 

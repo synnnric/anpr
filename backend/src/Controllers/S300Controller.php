@@ -71,6 +71,10 @@ class S300Controller {
                         $exit['anpr_device_sn'], $plate, "VIP entry inspection #$id"
                     );
                 }
+                // Pre-inspection ANPR gate: open on recognition so the VIP can drive in.
+                \App\Services\DecisionExecutor::openEntryGate(
+                    ['id' => $id, 'channel_no' => $channelNo], $channel
+                );
             }
             InspectionService::logOperation([
                 'actor_username' => $actor,
@@ -155,6 +159,13 @@ class S300Controller {
             }
             throw $e;
         }
+
+        // Pre-inspection ANPR gate: open the camera's own barrier immediately on
+        // recognition so the vehicle can proceed into the inspection area. The
+        // UVIS scan, S300 and road blocker all happen afterwards.
+        \App\Services\DecisionExecutor::openEntryGate(
+            ['id' => $inspectionId, 'channel_no' => $channelNo], $channel
+        );
 
         // Open a visit record so we can pair it to the eventual exit
         VisitService::createEntry($plate, $channelNo, $inspectionId);
