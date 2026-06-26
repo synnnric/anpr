@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Play, RotateCcw, AlertOctagon, Camera, LogOut,
-  Loader2, ShieldCheck, Activity, Crown,
+  Loader2, ShieldCheck, Activity, Crown, Ban,
   Plus, Trash2, Edit2, X, Check, ChevronRight, AlertTriangle, Zap,
   ChevronDown, Wrench,
 } from 'lucide-react';
@@ -13,12 +13,13 @@ import {
   s300EmergencyStop, s300ManualReset,
   connectS300Events,
   listVipPlates, createVipPlate, deleteVipPlate, updateVipPlate,
+  listBlacklistPlates, createBlacklistPlate, deleteBlacklistPlate, updateBlacklistPlate,
   getSettings, updateSettings, mediaUrl,
   type S300Event,
 } from '../services/s300Service';
 import type {
   S300Channel, Inspection, InspectionDetail,
-  VipPlate, ChannelStatus, OperationEntry, Decision, UvisCoord,
+  VipPlate, BlacklistPlate, ChannelStatus, OperationEntry, Decision, UvisCoord,
 } from '../types/s300';
 import { OPERATING_STATE_COLORS } from '../types/s300';
 import { useMqtt } from '../contexts/MqttContext';
@@ -31,7 +32,7 @@ import { fmtPgTs, fmtPgTime } from '../utils/helpers';
 import { useI18n } from '../contexts/I18nContext';
 import type { TKey } from '../i18n/translations';
 
-type TabKey = 'live' | 'history' | 'channels' | 'vip' | 'settings';
+type TabKey = 'live' | 'history' | 'channels' | 'vip' | 'blacklist' | 'settings';
 
 const DECISION_STYLE: Record<Decision, { bg: string; text: string; icon: string; key: TKey }> = {
   pending:  { bg: 'bg-surface-dark border border-border',           text: 'text-text-secondary', icon: '⋯', key: 's300.decision.pending' },
@@ -177,7 +178,7 @@ export default function S300InspectionPage() {
             </p>
           </div>
           <div className="flex gap-1 bg-surface-dark p-1 rounded-lg">
-            {(['live','history','channels','vip','settings'] as TabKey[]).map(k => (
+            {(['live','history','channels','vip','blacklist','settings'] as TabKey[]).map(k => (
               <button key={k} onClick={() => setTab(k)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md capitalize transition ${
                   tab === k ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'
@@ -229,6 +230,7 @@ export default function S300InspectionPage() {
           <ChannelsTab channels={channels} reload={refreshChannels} showToast={showToast} />
         )}
         {tab === 'vip' && <VipTab showToast={showToast} />}
+        {tab === 'blacklist' && <BlacklistTab showToast={showToast} />}
         {tab === 'settings' && <SettingsTab channels={channels} showToast={showToast} />}
       </div>
 
@@ -1272,6 +1274,117 @@ function VipTab({ showToast }: { showToast: (msg: string, ok: boolean) => void }
             ))}
             {vips.length === 0 && (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-text-secondary text-sm">{t('s300.vip.empty')}</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ============================ BLACKLIST TAB ============================
+function BlacklistTab({ showToast }: { showToast: (msg: string, ok: boolean) => void }) {
+  const { t } = useI18n();
+  const [items, setItems] = useState<BlacklistPlate[]>([]);
+  const [newPlate, setNewPlate] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+
+  const reload = useCallback(async () => {
+    try { setItems(await listBlacklistPlates()); }
+    catch (e) { showToast(t('s300.blacklist.toast.load_failed', { msg: (e as Error).message }), false); }
+  }, [showToast, t]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const add = async () => {
+    const plate = newPlate.trim().toUpperCase();
+    if (!plate) return;
+    try {
+      await createBlacklistPlate({ license_plate: plate, description: newDesc || undefined });
+      setNewPlate(''); setNewDesc('');
+      showToast(t('s300.blacklist.toast.added', { n: plate }), true);
+      await reload();
+    } catch (e) { showToast(t('s300.blacklist.toast.add_failed', { msg: (e as Error).message }), false); }
+  };
+
+  const toggle = async (v: BlacklistPlate) => {
+    try {
+      await updateBlacklistPlate(v.id, { enabled: v.enabled ? 0 : 1 });
+      await reload();
+    } catch (e) { showToast(t('s300.blacklist.toast.toggle_failed', { msg: (e as Error).message }), false); }
+  };
+
+  const remove = async (v: BlacklistPlate) => {
+    if (!confirm(t('s300.blacklist.confirm_delete', { n: v.license_plate }))) return;
+    try {
+      await deleteBlacklistPlate(v.id);
+      showToast(t('s300.blacklist.toast.removed'), true);
+      await reload();
+    } catch (e) { showToast(t('s300.blacklist.toast.delete_failed', { msg: (e as Error).message }), false); }
+  };
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <div className="bg-surface border border-border rounded-lg p-4">
+        <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2 mb-1">
+          <Ban className="w-4 h-4 text-red-500" /> {t('s300.blacklist.title')}
+        </h3>
+        <p className="text-xs text-text-secondary mb-4">
+          {t('s300.blacklist.hint')}
+        </p>
+
+        <div className="flex gap-2">
+          <input value={newPlate} onChange={e => setNewPlate(e.target.value)}
+            placeholder={t('s300.blacklist.placeholder.plate')}
+            className="flex-1 px-3 py-2 bg-surface-dark border border-border rounded-md text-sm font-mono text-text-primary" />
+          <input value={newDesc} onChange={e => setNewDesc(e.target.value)}
+            placeholder={t('s300.blacklist.placeholder.desc')}
+            className="flex-1 px-3 py-2 bg-surface-dark border border-border rounded-md text-sm text-text-primary" />
+          <button onClick={add} disabled={!newPlate.trim()}
+            className="flex items-center gap-1 px-3 py-2 bg-primary text-white text-sm rounded-md hover:bg-primary/90 disabled:opacity-50">
+            <Plus className="w-4 h-4" /> {t('s300.blacklist.add')}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-surface border border-border rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-surface-dark text-text-secondary text-xs uppercase">
+            <tr>
+              <th className="text-left px-4 py-2">{t('s300.blacklist.col.plate')}</th>
+              <th className="text-left px-4 py-2">{t('s300.blacklist.col.description')}</th>
+              <th className="text-left px-4 py-2">{t('s300.blacklist.col.status')}</th>
+              <th className="text-left px-4 py-2">{t('s300.blacklist.col.added')}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(v => (
+              <tr key={v.id} className="border-t border-border">
+                <td className="px-4 py-2">
+                  <span className="inline-flex items-center gap-1.5 font-mono font-medium text-text-primary">
+                    <Ban className="w-3 h-3 text-red-500" /> {v.license_plate}
+                  </span>
+                </td>
+                <td className="px-4 py-2 text-text-secondary">{v.description || '-'}</td>
+                <td className="px-4 py-2">
+                  <button onClick={() => toggle(v)}
+                    className={`text-xs px-2 py-0.5 rounded ${
+                      v.enabled ? 'bg-red-500/20 text-red-500' : 'bg-surface-dark text-text-secondary'
+                    }`}>
+                    {v.enabled ? t('s300.blacklist.active') : t('s300.blacklist.disabled')}
+                  </button>
+                </td>
+                <td className="px-4 py-2 text-text-secondary text-xs font-mono">{fmtPgTs(v.created_at)}</td>
+                <td className="px-4 py-2 text-right">
+                  <button onClick={() => remove(v)} className="p-1 text-text-secondary hover:text-red-500">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {items.length === 0 && (
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-text-secondary text-sm">{t('s300.blacklist.empty')}</td></tr>
             )}
           </tbody>
         </table>

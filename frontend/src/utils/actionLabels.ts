@@ -9,6 +9,7 @@ const ACTION_LABELS: Record<string, { id: string; en: string }> = {
   // S300 device control
   come:                  { id: 'Panggil kendaraan', en: 'Vehicle come' },
   come_vip_bypass:       { id: 'Lewati VIP', en: 'VIP bypass' },
+  come_blacklist_denied: { id: 'Ditolak (blacklist)', en: 'Denied (blacklist)' },
   capture:               { id: 'Ambil gambar', en: 'Capture' },
   leave:                 { id: 'Kendaraan keluar', en: 'Vehicle leave' },
   auto_leave:            { id: 'Respon Palang', en: 'Gate response' },
@@ -29,6 +30,11 @@ const ACTION_LABELS: Record<string, { id: string; en: string }> = {
   open_entry_gate:         { id: 'Buka palang', en: 'Open gate' },
   open_entry_gate_skipped: { id: 'Buka palang dilewati', en: 'Gate open skipped' },
 
+  // ANPR camera feedback on recognition (serial_data to the KF control card)
+  entry_voice:             { id: 'Suara sambutan', en: 'Welcome voice' },
+  entry_led:               { id: 'Tampilan LED plat', en: 'LED plate display' },
+  entry_green_light:       { id: 'Lampu hijau', en: 'Green light' },
+
   // Road blocker (lifting column) — distinct from the ANPR gate ("Buka palang")
   open_blocker:          { id: 'Buka palang jalan', en: 'Open road blocker' },
   open_blocker_skipped:  { id: 'Buka palang jalan dilewati', en: 'Open road blocker skipped' },
@@ -43,6 +49,9 @@ const ACTION_LABELS: Record<string, { id: string; en: string }> = {
   'vip.create':          { id: 'Tambah VIP', en: 'Add VIP' },
   'vip.update':          { id: 'Ubah VIP', en: 'Update VIP' },
   'vip.delete':          { id: 'Hapus VIP', en: 'Delete VIP' },
+  'blacklist.create':    { id: 'Tambah blacklist', en: 'Add blacklist' },
+  'blacklist.update':    { id: 'Ubah blacklist', en: 'Update blacklist' },
+  'blacklist.delete':    { id: 'Hapus blacklist', en: 'Delete blacklist' },
   'settings.update':     { id: 'Ubah pengaturan', en: 'Update settings' },
   'admin.reset_data':    { id: 'Bersihkan data', en: 'Clear data' },
 

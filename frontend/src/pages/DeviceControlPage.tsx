@@ -136,13 +136,16 @@ function SnapshotCard({ publishMessage, deviceSn, disabled }: CardProps) {
 function GateOpenCard({ publishMessage, deviceSn, disabled }: CardProps) {
   const { t } = useI18n();
   const handleGateOpen = () => {
-    publishMessage('gate_direct_open', {
+    // The camera opens its barrier via gpio_out (relay pulse), the same command
+    // the vendor CP and our backend use — there is no `gate_direct_open` command.
+    // io=0 relay, value=2 pulse (ON then OFF), delay=1000ms. Matches DecisionExecutor::openEntryGate.
+    publishMessage('gpio_out', {
       id: generateMessageId(),
       sn: deviceSn,
-      name: 'gate_direct_open',
+      name: 'gpio_out',
       version: '1.0',
       timestamp: Math.floor(Date.now() / 1000),
-      payload: null,
+      payload: { type: 'gpio_out', body: { delay: 1000, io: 0, value: 2 } },
     });
   };
 

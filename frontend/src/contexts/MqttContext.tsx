@@ -103,22 +103,25 @@ export function MqttProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const setupSubscriptions = useCallback((sn: string) => {
+  const setupSubscriptions = useCallback(() => {
     unsubscribers.current.forEach((u) => u());
     unsubscribers.current = [];
 
-    if (!sn) return;
-
-    // Real cameras use one of two topic layouts: the standard `device/{sn}/message/up/{name}`
-    // or SN-first `{sn}/device/message/up/{name}`. Subscribe to both so the live feed works
-    // regardless of firmware — the worker already bridges both layouts.
+    // Subscribe with a `+` wildcard in the SN segment so the live feed works for
+    // ANY camera without first configuring its serial — mirroring the worker
+    // (which subscribes `device/+/...` and `+/device/...`). Previously these
+    // were pinned to a specific deviceSn, so when no SN was configured nothing
+    // was ever subscribed and the page stayed empty forever (the SN auto-detect
+    // below could never fire because its handler wasn't subscribed). Both topic
+    // layouts are covered. The device SN is captured from the first ivs_result
+    // (used only for publishing down-commands).
     const up = (name: string, handler: (topic: string, msg: string) => void) => [
-      mqttService.subscribe(`device/${sn}/message/up/${name}`, handler),
-      mqttService.subscribe(`${sn}/device/message/up/${name}`, handler),
+      mqttService.subscribe(`device/+/message/up/${name}`, handler),
+      mqttService.subscribe(`+/device/message/up/${name}`, handler),
     ];
     const downReply = (name: string, handler: (topic: string, msg: string) => void) => [
-      mqttService.subscribe(`device/${sn}/message/down/${name}/reply`, handler),
-      mqttService.subscribe(`${sn}/device/message/down/${name}/reply`, handler),
+      mqttService.subscribe(`device/+/message/down/${name}/reply`, handler),
+      mqttService.subscribe(`+/device/message/down/${name}/reply`, handler),
     ];
 
     // Recognition results
@@ -156,10 +159,9 @@ export function MqttProvider({ children }: { children: ReactNode }) {
           isEncrypted: result.is_encrypted,
         };
         setRecognitions((prev) => [rec, ...prev].slice(0, 200));
-        // Auto-detect device SN
-        if (data.sn && !sn) {
-          setDeviceSn(data.sn);
-        }
+        // Capture the device SN from the first recognition (used for publishing
+        // down-commands). Set once so we don't churn state on every message.
+        if (data.sn) setDeviceSn((cur) => cur || data.sn);
       } catch { /* ignore parse errors */ }
     });
 
@@ -185,7 +187,7 @@ export function MqttProvider({ children }: { children: ReactNode }) {
       } catch { /* ignore */ }
     };
     const uHb = [
-      mqttService.subscribe(`$/device/${sn}/message/up/keep_alive`, heartbeatHandler),
+      mqttService.subscribe(`$/device/+/message/up/keep_alive`, heartbeatHandler),
       ...up('keep_alive', heartbeatHandler),
     ];
 
@@ -258,7 +260,7 @@ export function MqttProvider({ children }: { children: ReactNode }) {
       'get_device_timestamp', 'white_list_operator', 'set_cloud_ctrl',
       'io_lock', 'get_io_lock_status', 'get_io_status', 'lcd_cfg',
       'tts_voice', 'set_oss_cfg', 'reboot_dev', 'device_set',
-      'check_offline_record', 'set_plate_encryption_cfg', 'gate_direct_open',
+      'check_offline_record', 'set_plate_encryption_cfg',
     ];
     const replyUnsubs = replyTopics.flatMap((name) =>
       downReply(name, (topic, msg) => {
@@ -274,10 +276,8 @@ export function MqttProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback(async () => {
     await mqttService.connect(config);
-    if (deviceSn) {
-      setupSubscriptions(deviceSn);
-    }
-  }, [config, deviceSn, setupSubscriptions]);
+    setupSubscriptions();
+  }, [config, setupSubscriptions]);
 
   const disconnect = useCallback(() => {
     unsubscribers.current.forEach((u) => u());
@@ -293,7 +293,7 @@ export function MqttProvider({ children }: { children: ReactNode }) {
     if (autoConnectedRef.current) return;
     autoConnectedRef.current = true;
     mqttService.connect(config).then(() => {
-      if (deviceSn) setupSubscriptions(deviceSn);
+      setupSubscriptions();
     }).catch(() => {
       // Failure leaves status='error'; mqtt.js will keep retrying.
     });
@@ -302,12 +302,15 @@ export function MqttProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-subscribe when deviceSn changes
+  // Ensure subscriptions exist once connected (covers the case where the
+  // socket connected before/independently of the auto-connect effect, or was
+  // re-established). Subscriptions are SN-agnostic wildcards, so this does not
+  // need to re-run when deviceSn changes.
   useEffect(() => {
-    if (status === 'connected' && deviceSn) {
-      setupSubscriptions(deviceSn);
+    if (status === 'connected' && unsubscribers.current.length === 0) {
+      setupSubscriptions();
     }
-  }, [deviceSn, status, setupSubscriptions]);
+  }, [status, setupSubscriptions]);
 
   const publishMessage = useCallback((name: string, payload: unknown) => {
     if (!deviceSn) return;

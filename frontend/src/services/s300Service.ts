@@ -1,4 +1,4 @@
-import type { S300Channel, Inspection, InspectionDetail, VipPlate, ChannelStatus, AppSettings, Visit, VisitSummary } from '../types/s300';
+import type { S300Channel, Inspection, InspectionDetail, VipPlate, BlacklistPlate, ChannelStatus, AppSettings, Visit, VisitSummary } from '../types/s300';
 
 const API_BASE = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE
   || 'http://127.0.0.1/anpr_backend';
@@ -83,6 +83,16 @@ export const deleteVipPlate = (id: number) => request<null>('DELETE', `/api/vip/
 export const checkVipPlate = (plate: string) =>
   request<{ plate: string; vip: boolean }>('GET', `/api/vip/check/${encodeURIComponent(plate)}`);
 
+// ----- Blacklist plates (ANPR-stage deny list) -----
+export const listBlacklistPlates = () => request<BlacklistPlate[]>('GET', '/api/blacklist');
+export const createBlacklistPlate = (data: { license_plate: string; description?: string; enabled?: number }) =>
+  request<BlacklistPlate>('POST', '/api/blacklist', data);
+export const updateBlacklistPlate = (id: number, data: { description?: string; enabled?: number }) =>
+  request<BlacklistPlate>('PUT', `/api/blacklist/${id}`, data);
+export const deleteBlacklistPlate = (id: number) => request<null>('DELETE', `/api/blacklist/${id}`);
+export const checkBlacklistPlate = (plate: string) =>
+  request<{ plate: string; blacklisted: boolean }>('GET', `/api/blacklist/check/${encodeURIComponent(plate)}`);
+
 // ----- settings -----
 export const getSettings = () => request<AppSettings>('GET', '/api/settings');
 export const updateSettings = (data: Partial<AppSettings>) =>
@@ -136,6 +146,7 @@ export type S300EventType =
   | 'blocker-opened'
   | 'failure-audio-sent'
   | 'vip-bypass'
+  | 'blacklist-denied'
   | 'visit-completed'
   | 'orphan-exit'
   | 'reset-watchdog';
@@ -150,7 +161,7 @@ export function connectS300Events(
   onError?: (e: Event) => void,
 ): () => void {
   const es = new EventSource(API_BASE + '/api/events/stream');
-  const types: S300EventType[] = ['work-status', 'face-image', 'video-record', 'reset-complete', 'uvis', 'decision', 'blocker-opened', 'failure-audio-sent', 'vip-bypass', 'visit-completed', 'orphan-exit', 'reset-watchdog'];
+  const types: S300EventType[] = ['work-status', 'face-image', 'video-record', 'reset-complete', 'uvis', 'decision', 'blocker-opened', 'failure-audio-sent', 'vip-bypass', 'blacklist-denied', 'visit-completed', 'orphan-exit', 'reset-watchdog'];
   types.forEach((t) => {
     es.addEventListener(t, (e) => {
       try {

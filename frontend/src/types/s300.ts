@@ -210,6 +210,14 @@ export interface VipPlate {
   created_at: string;
 }
 
+export interface BlacklistPlate {
+  id: number;
+  license_plate: string;
+  description: string | null;
+  enabled: number;
+  created_at: string;
+}
+
 export interface ChannelStatus {
   busy: boolean;
   reason: 'no_active_inspection' | 'ready' | 'in_progress';
