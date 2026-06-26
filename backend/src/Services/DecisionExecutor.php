@@ -261,7 +261,7 @@ class DecisionExecutor {
      *   entry_led_text       LED text; '' = show the plate number; otherwise a
      *                        literal that may contain a {plate} placeholder (default '')
      */
-    public static function announceRecognition(array $channel, string $plate, ?int $inspectionId, int $channelNo): void {
+    public static function announceRecognition(array $channel, string $plate, ?int $inspectionId, string $channelNo): void {
         $sn = $channel['anpr_device_sn'] ?? null;
         if (!$sn) return;
 
