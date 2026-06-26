@@ -19,6 +19,19 @@ class MqttOutbound {
     }
 
     /**
+     * Resolve the serial-frame encoder for the camera's display+voice control
+     * card. The vendor keys this off the per-device display_motherboard_type
+     * (1 = 科发/KF, 2 = 方控/FK). Our cameras are FK, so FK is the default;
+     * the `control_card_type` setting overrides it for KF hardware.
+     *
+     * @return class-string
+     */
+    private static function card(): string {
+        $row = Database::fetchOne("SELECT value FROM anprc_settings WHERE key_name = ?", ['control_card_type']);
+        return ((string)($row['value'] ?? '2')) === '1' ? KfControlCard::class : FangkControlCard::class;
+    }
+
+    /**
      * Add a plate to a device's local whitelist via MQTT `white_list_operator`.
      * Used to authorise an exit plate after a successful entry.
      */
@@ -56,8 +69,9 @@ class MqttOutbound {
      * on-recognition "Welcome" voiceover.
      */
     public static function playVoice(string $cameraSn, string $text): int {
-        $frame = KfControlCard::voiceFrame($text);
-        return self::enqueue($cameraSn, 'serial_data', KfControlCard::serialDataBody([$frame]));
+        $card = self::card();
+        $frame = $card::voiceFrame($text);
+        return self::enqueue($cameraSn, 'serial_data', $card::serialDataBody([$frame]));
     }
 
     /**
@@ -72,11 +86,12 @@ class MqttOutbound {
             static fn($s) => $s !== ''
         ));
         if (!$lines) return 0;
+        $card = self::card();
         $frames = [];
         foreach ($lines as $i => $line) {
-            $frames[] = KfControlCard::tempTextFrame($line, $i);
+            $frames[] = $card::tempTextFrame($line, $i);
         }
-        return self::enqueue($cameraSn, 'serial_data', KfControlCard::serialDataBody($frames));
+        return self::enqueue($cameraSn, 'serial_data', $card::serialDataBody($frames));
     }
 
     /**
@@ -85,8 +100,9 @@ class MqttOutbound {
      * sends this on every gate-open, alongside the gpio_out pulse.
      */
     public static function greenLight(string $cameraSn, int $ch = 1, int $seconds = 10): int {
-        $frame = KfControlCard::relayFrame($ch, $seconds);
-        return self::enqueue($cameraSn, 'serial_data', KfControlCard::serialDataBody([$frame]));
+        $card = self::card();
+        $frame = $card::relayFrame($ch, $seconds);
+        return self::enqueue($cameraSn, 'serial_data', $card::serialDataBody([$frame]));
     }
 
     /**
