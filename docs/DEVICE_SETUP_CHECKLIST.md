@@ -7,7 +7,7 @@ Companion docs:
 - [`DEPLOYMENT.md`](./DEPLOYMENT.md) — server / OS / service install
 - [`COMMUNICATION.md`](./COMMUNICATION.md) — exact topics, endpoints, payloads
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) — high-level flows
-- [`DATABASE.md`](./DATABASE.md) — `channels` table reference
+- [`DATABASE.md`](./DATABASE.md) — `anprc_channels` table reference
 
 ---
 
@@ -20,7 +20,7 @@ Companion docs:
   Get-Process node, python -ErrorAction SilentlyContinue
   ```
 - [ ] Note down the production IP/hostname of the platform — every device will be pointed at it.
-- [ ] Note down each device's serial number / IP — you'll paste these into the `channels` table.
+- [ ] Note down each device's serial number / IP — you'll paste these into the `anprc_channels` table.
 
 ---
 
@@ -160,7 +160,7 @@ The robot is **HTTP, not MQTT**. The platform is both the HTTP server (for its c
 
 ### Platform-side
 
-- [ ] In `channels` row for the entry channel: `s300_base_url = 'http://<arm-ip>:<arm-port>'`.
+- [ ] In `anprc_channels` row for the entry channel: `s300_base_url = 'http://<arm-ip>:<arm-port>'`.
   The platform will call `/api/v1/channel-s300/come/{channelNo}`, `/leave/{channelNo}`, etc. on this URL.
 - [ ] `uvis_timeout_sec = 30` (or whatever the arm's UVIS-scan worst case is). Inspections without a UVIS callback by this deadline auto-FAIL.
 
@@ -190,7 +190,7 @@ Cross-check the real arm against [`COMMUNICATION.md` → S300 Inspection Robot](
 
 - [ ] **`operating_state` values stay within the documented enum** (0=ready · 1=inspecting · 2=resetting · 3=completed · 4=e-stop · 5=failed · 6=started). Open the inspection in **Inspections** page → `current_operating_state` column should only ever take values 0–6. Out-of-range value (e.g. 99) ⇒ different protocol revision on the firmware.
 
-- [ ] **All outbound commands succeed.** Open `inspection_status_logs` for the test inspection:
+- [ ] **All outbound commands succeed.** Open `anprc_inspection_status_logs` for the test inspection:
   ```sql
   SELECT created_at, event, http_status, error
     FROM inspection_status_logs
@@ -207,7 +207,7 @@ Cross-check the real arm against [`COMMUNICATION.md` → S300 Inspection Robot](
   - [ ] `POST /read-work-status/{ch}` · **purpose:** re-queries the arm's current state in case a `work-status` callback was lost in transit.
   - [ ] `POST /manual-reset/{ch}` · **purpose:** force-resets a stuck arm so the channel doesn't stay BUSY forever.
 
-  Both visible in `inspection_status_logs`. No such rows → cron isn't running.
+  Both visible in `anprc_inspection_status_logs`. No such rows → cron isn't running.
 
 ---
 
@@ -222,7 +222,7 @@ REST API, no MQTT. Per [Qigong AIoT spec](../%E3%80%90SSRD251030-04305%E3%80%91R
 
 ### Platform-side
 
-In `channels` row for the entry channel:
+In `anprc_channels` row for the entry channel:
 
 - [ ] `rb_ip` = controller IP
 - [ ] `rb_port` = controller HTTP port (default `8088`)
@@ -279,7 +279,7 @@ Once all four real devices are in place:
 
 - [ ] **Live entry** — drive a known plate through the entry lane. Confirm in this order:
   1. Plate appears on **MQTT Logs → Inbound** for the entry SN
-  2. An `inspections` row is created (state=`started` → `inspecting` → `resetting` → `completed`)
+  2. An `anprc_inspections` row is created (state=`started` → `inspecting` → `resetting` → `completed`)
   3. The arm finishes its UVIS scan within `uvis_timeout_sec`
   4. **Recent Decisions** logs a `pass` (or `suspect` / `fail`)
   5. On PASS, the road blocker drops, vehicle drives through, ~8 s later it raises
@@ -294,7 +294,7 @@ Once all four real devices are in place:
   - `decision = 'fail'`
   - Failure TTS audio plays on the camera/speaker
   - `visits.status = 'denied_entry'`
-- [ ] **Orphan exit** — drive an unknown plate at the exit camera. Should remain blocked; a `visits` row with `status='orphan_exit'` appears.
+- [ ] **Orphan exit** — drive an unknown plate at the exit camera. Should remain blocked; a `anprc_visits` row with `status='orphan_exit'` appears.
 - [ ] **Heartbeat-loss alarm** — power off one camera. Within 30 s its dashboard chip turns 🔴 **STALE / OFFLINE**. Power back on; it should recover within 30 s.
 
 ---
@@ -302,14 +302,14 @@ Once all four real devices are in place:
 ## 8. Operations / monitoring (after go-live)
 
 - [ ] Set up the cron tick: a systemd timer or external cron must call the worker every 5 s (the bundled `worker.py` already does this; just confirm the service is `enabled`).
-- [ ] Confirm `worker_last_seen_at` in `settings` is updating every 5 s (dashboard Worker card is green).
+- [ ] Confirm `worker_last_seen_at` in `anprc_settings` is updating every 5 s (dashboard Worker card is green).
 - [ ] Add log rotation for:
   - `C:\xampp\htdocs\anpr_backend\logs\app-*.log` (PHP errors)
   - `worker/worker.err.log`
   - `/var/log/mosquitto/mosquitto.log`
 - [ ] Set up nightly backups of the `anpr_s300` database (see DEPLOYMENT.md).
 - [ ] Configure an external uptime monitor to hit `/api/health` every minute.
-- [ ] Decide retention for `mqtt_inbound_log` — at ~1 row per camera per 10 s, this table grows ~8 600 rows / camera / day. Schedule a nightly `DELETE FROM mqtt_inbound_log WHERE received_at < NOW() - INTERVAL '30 days';` if you don't need indefinite history.
+- [ ] Decide retention for `anprc_mqtt_inbound_log` — at ~1 row per camera per 10 s, this table grows ~8 600 rows / camera / day. Schedule a nightly `DELETE FROM mqtt_inbound_log WHERE received_at < NOW() - INTERVAL '30 days';` if you don't need indefinite history.
 
 ---
 

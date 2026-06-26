@@ -18,7 +18,7 @@ in which direction, and what payload it carries. Read this alongside
 | Frontend (browser tab)    | HTTP + MQTT WS | backend :80 + broker :8083 | one per user |
 
 The platform itself is the orchestrator. It never reaches devices directly
-through a hard-coded address — every endpoint is pulled from the `channels`
+through a hard-coded address — every endpoint is pulled from the `anprc_channels`
 table at runtime, so swapping hardware is a config change, not a code change.
 
 ---
@@ -56,9 +56,8 @@ sn-first variant is equivalent.
 | Topic | When the platform sends it | Payload (key fields) |
 |-------|---------------------------|----------------------|
 | `device/{sn}/message/down/white_list_operator` | exit-camera one-time-pass add (on entry PASS / VIP_PASS) and delete (on exit detection) | `operator_type`: `add` ‖ `delete`; for add: `dldb_rec[].plate`, `enable_time`, `overdue_time`; for delete: `plate` |
-| `device/{sn}/message/down/gpio_out`            | open the entry camera's own barrier gate (sent to the ENTRY camera at `/come`, on recognition) — protocol §7.2 | `io` 0-3 (relay), `value` 0=OFF ‖ 1=ON ‖ 2=Pulse, `delay` ms 500-5000. Camera ACKs on `.../down/gpio_out/reply` with `{code:200,...}` |
+| `device/{sn}/message/down/gpio_out`            | open the entry camera's own barrier gate — sent to the ENTRY camera at `/come` on recognition, and by the manual "Buka Gerbang Langsung" override button on the Device Control page — protocol §7.2 | `io` 0-3 (relay), `value` 0=OFF ‖ 1=ON ‖ 2=Pulse, `delay` ms 500-5000. Camera ACKs on `.../down/gpio_out/reply` with `{code:200,...}` |
 | `device/{sn}/message/down/tts_voice`           | failure prompt ("please back out") | indexed audio |
-| `device/{sn}/message/down/gate_direct_open`    | force-open barrier (manual override) | — |
 | `device/{sn}/message/down/{cmd}/reply`         | camera ACKs every down command | `code`, original `id` |
 
 **Vehicle snapshot images.** From each `ivs_result` the worker extracts
@@ -104,7 +103,7 @@ for outbound commands.
 
 ### S300 state vs platform state
 
-The `inspections` table tracks both:
+The `anprc_inspections` table tracks both:
 
 - `current_operating_state` — mirror of what S300 last reported (column = the
   raw 0-5 number from cmd 322).
@@ -126,7 +125,7 @@ the backend's `RoadBlockerClient` from `DecisionExecutor` when the decision is
 PASS / SUSPECT / VIP_PASS. Backend only ever LOWERS (opens); raising is the
 hardware's decision (`blocker_close_mode='hardware'`). See `ROAD BLOCKER API.pdf`.
 
-Each `channels` row carries everything needed:
+Each `anprc_channels` row carries everything needed:
 
 ```
 rb_ip        VARCHAR(64)    e.g. 127.0.0.1
@@ -158,7 +157,7 @@ It authenticates to the broker with `MQTT_USERNAME` / `MQTT_PASSWORD` from
 
 | Topic | Source |
 |-------|--------|
-| `device/{sn}/message/down/{cmd}` **and** `{sn}/device/message/down/{cmd}` | drained from `mqtt_outbound_queue` — published to both layouts so the device receives it regardless of which it subscribes to |
+| `device/{sn}/message/down/{cmd}` **and** `{sn}/device/message/down/{cmd}` | drained from `anprc_mqtt_outbound_queue` — published to both layouts so the device receives it regardless of which it subscribes to |
 
 ### Backend calls (HTTP)
 
@@ -257,7 +256,7 @@ closed.
 |------|---------------|
 | 1, 6, 8 (MQTT) | **MQTT Logs** page — filter by plate to see every camera message related to that vehicle |
 | 2 (worker decisions) | worker stdout / `worker.err.log` |
-| 3-5 (S300 ↔ platform HTTP) | **S300 Inspection** page → click the inspection row for the detail panel; raw events also visible in `inbound_events_raw` |
-| 5 (decision + executor) | `inspection_status_logs` table |
+| 3-5 (S300 ↔ platform HTTP) | **S300 Inspection** page → click the inspection row for the detail panel; raw events also visible in `anprc_inbound_events_raw` |
+| 5 (decision + executor) | `anprc_inspection_status_logs` table |
 | 6 (queue) | **MQTT Logs** page → Outbound tab |
 | 8 (visit closure) | **Visits & Reports** page |

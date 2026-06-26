@@ -4,6 +4,16 @@ Skema PostgreSQL 13+ untuk platform ANPR + S300. Sumber kanonik:
 [`backend/database/schema.sql`](../backend/database/schema.sql) — dokumen ini
 mencerminkannya untuk dibaca manusia.
 
+> **Prefix `anprc_` (namespacing database bersama).** Production berjalan di
+> database PostgreSQL yang dipakai bersama platform lain, jadi setiap **tabel**,
+> **tipe ENUM**, dan **fungsi** trigger `updated_at` ANPR memakai prefix `anprc_`
+> (mis. `anprc_channels`, `anprc_inspection_state`). **Kolom TIDAK diberi prefix**
+> — kolom ter-scope ke tabelnya sehingga tak pernah bentrok, dan membiarkannya
+> menjaga nama field REST/JSON (dan frontend) tetap sama. Nama index, constraint,
+> dan trigger tetap bentuk aslinya (mis. `idx_channels_kind`) — terikat ke objek
+> yang di-rename lewat OID. Database lama dimigrasi oleh
+> `backend/database/migrations/2026-06-26_rename_to_anprc_prefix.sql`.
+
 ---
 
 ## Konvensi
@@ -19,27 +29,27 @@ mencerminkannya untuk dibaca manusia.
 - **Payload JSON:** `JSONB` agar dapat di-query dengan operator `->`, `->>`,
   dan `@>`.
 - **Trigger updated-at:** empat tabel mempertahankan `updated_at` secara
-  otomatis melalui fungsi `trg_set_updated_at()` — `channels`, `inspections`,
-  `visits`, `settings`. Setiap tabel lain bersifat append-only atau memakai
+  otomatis melalui fungsi `anprc_trg_set_updated_at()` — `anprc_channels`, `anprc_inspections`,
+  `anprc_visits`, `anprc_settings`. Setiap tabel lain bersifat append-only atau memakai
   update manual.
 
 ## Tipe enum
 
 | Enum | Nilai |
 |---|---|
-| `inspection_state` | `pending`, `started`, `inspecting`, `resetting`, `completed`, `emergency_stop`, `failed`, `vip_skipped` |
-| `inspection_decision` | `pending`, `pass`, `suspect`, `fail`, `vip_pass` |
-| `channel_kind` | `entry`, `exit` |
-| `visit_status` | `active`, `completed`, `orphan_exit`, `denied_entry` |
-| `user_role` | `admin`, `operator`, `viewer` |
-| `op_status` | `success`, `failed` |
-| `mqtt_queue_status` | `pending`, `sent`, `failed` |
+| `anprc_inspection_state` | `pending`, `started`, `inspecting`, `resetting`, `completed`, `emergency_stop`, `failed`, `vip_skipped` |
+| `anprc_inspection_decision` | `pending`, `pass`, `suspect`, `fail`, `vip_pass` |
+| `anprc_channel_kind` | `entry`, `exit` |
+| `anprc_visit_status` | `active`, `completed`, `orphan_exit`, `denied_entry` |
+| `anprc_user_role` | `admin`, `operator`, `viewer` |
+| `anprc_op_status` | `success`, `failed` |
+| `anprc_mqtt_queue_status` | `pending`, `sent`, `failed` |
 
 ---
 
 ## Tabel — dikelompokkan berdasarkan concern
 
-### 1. Topologi — `channels`
+### 1. Topologi — `anprc_channels`
 
 Peta gerbang fisik platform. Setiap jalur / barrier adalah satu baris channel;
 seluruh konfigurasi per-jalur (kamera ANPR mana, S300 mana, road blocker mana)
@@ -56,13 +66,13 @@ ada di sini.
 | `uvis_timeout_sec` | INT NOT NULL DEFAULT 30 | Timeout scan UVIS; FAIL setelah ini |
 | `failure_audio_index` | INT DEFAULT 7 | Index TTS yang diputar saat FAIL |
 | `name` | VARCHAR(128) | Label yang bisa dibaca manusia |
-| `kind` | `channel_kind` NOT NULL DEFAULT `entry` | Entry atau exit |
+| `kind` | `anprc_channel_kind` NOT NULL DEFAULT `entry` | Entry atau exit |
 | `paired_channel_id` | INT | Pasangan entry/exit untuk routing whitelist |
 | `enabled` | SMALLINT 0/1 | Soft-disable tanpa menghapus |
 
 Indeks: `idx_channels_anpr_sn`, `idx_channels_kind`, `idx_channels_paired`.
 
-### 2. Deteksi — `vehicles`
+### 2. Deteksi — `anprc_vehicles`
 
 Log audit append-only. **Setiap plat yang dilihat ANPR mendapat baris**,
 terlepas dari apakah memicu inspeksi atau tidak.
@@ -81,12 +91,12 @@ terlepas dari apakah memicu inspeksi atau tidak.
 
 Indeks: `idx_vehicles_plate`, `idx_vehicles_detected`, `idx_vehicles_unique`.
 
-### 3. Lifecycle inspeksi — `inspections`
+### 3. Lifecycle inspeksi — `anprc_inspections`
 
 Jantung dari sistem. Satu baris per siklus S300. Menampung **dua field state
 paralel**:
 
-- `state` (`inspection_state`) — lifecycle platform: pending → started →
+- `state` (`anprc_inspection_state`) — lifecycle platform: pending → started →
   inspecting → resetting → completed
 - `current_operating_state` (SMALLINT 0-6) — cermin langsung dari yang
   terbaru dilaporkan S300 via `work-status` (cmd 322)
@@ -101,8 +111,8 @@ event HTTP (`/come`, `/leave`) dan callback `reset-complete`.
 | `channel_no` | VARCHAR(32) NOT NULL | Jalur tempat inspeksi ini berjalan |
 | `vehicle_id` | BIGINT | FK ke `vehicles.id` — diambil saat `/come` |
 | `license_plate` | VARCHAR(32) NOT NULL | |
-| `state` | `inspection_state` | Lifecycle platform |
-| `decision` | `inspection_decision` | `pending`, `pass`, `suspect`, `fail`, `vip_pass` |
+| `state` | `anprc_inspection_state` | Lifecycle platform |
+| `decision` | `anprc_inspection_decision` | `pending`, `pass`, `suspect`, `fail`, `vip_pass` |
 | `decision_reason` | VARCHAR(255) | Alasan (`Undercarriage clean`, `UVIS scan not received within timeout`, …) |
 | `decision_at`, `decision_timeout_at` | TIMESTAMP | Kapan diputuskan, kapan akan timeout |
 | `blocker_opened` | SMALLINT 0/1 | Apakah kolom diturunkan? |
@@ -119,7 +129,7 @@ Indeks: `idx_insp_channel`, `idx_insp_plate`, `idx_insp_state`,
 - **Partial unique index** `uq_one_active_inspection_per_channel` —
   ```
   CREATE UNIQUE INDEX uq_one_active_inspection_per_channel
-      ON inspections (channel_no)
+      ON anprc_inspections (channel_no)
       WHERE state IN ('pending','started','inspecting','resetting');
   ```
   Membuat busy-guard race-proof. Dua `/come` yang tiba pada milidetik yang
@@ -137,28 +147,28 @@ Semuanya di-key dengan `inspection_id` (soft FK — tanpa referensi yang
 ditegakkan karena callback S300 bisa tiba sebelum platform membuat baris
 inspeksinya, dan kita ingin menyimpan sinyal mentahnya).
 
-#### `inspection_status_logs`
+#### `anprc_inspection_status_logs`
 Setiap callback `work-status` (cmd 322). Berguna untuk merekonstruksi timeline
 S300 itu sendiri. `operating_state` adalah enum SMALLINT 0-6; `raw_payload`
 menyimpan JSON penuhnya.
 
-#### `inspection_face_images`
+#### `anprc_inspection_face_images`
 Foto pengemudi/penumpang yang dikirim via endpoint `face-image` (cmd 323).
 Disimpan sebagai URL yang menunjuk ke direktori `uploads/` platform.
 
-#### `inspection_video_streams`
+#### `anprc_inspection_video_streams`
 URL MJPEG/RTSP live dari kamera S300 (`video-record`, cmd 325). `camera_code`
 adalah label channel internal S300 (mis. `A`, `B`).
 
-#### `inspection_uvis` + `inspection_uvis_coords`
+#### `anprc_inspection_uvis` + `anprc_inspection_uvis_coords`
 Hasil scan undercarriage. `image_type` = 0 (clean) / 1 (suspect).
 `object_count` adalah jumlah objek asing terdeteksi. Saat `>0`, baris anak di
-`inspection_uvis_coords` memberikan koordinat bounding-box dan confidence
+`anprc_inspection_uvis_coords` memberikan koordinat bounding-box dan confidence
 untuk setiap objek terdeteksi.
 
 ---
 
-### 5. Kunjungan & laporan — `visits`
+### 5. Kunjungan & laporan — `anprc_visits`
 
 Catatan menghadap pengguna tentang "kendaraan X masuk di Y dan keluar di Z".
 Satu baris per kedatangan; di-update di tempat saat keluar.
@@ -170,7 +180,7 @@ Satu baris per kedatangan; di-update di tempat saat keluar.
 | `entry_channel_no`, `exit_channel_no` | VARCHAR(32) | Dari mana masuk / dari mana keluar |
 | `entry_inspection_id` | BIGINT | FK ke inspeksi yang mengizinkan masuk |
 | `entry_at`, `exit_at` | TIMESTAMP | UTC; durasi = `exit_at - entry_at` |
-| `status` | `visit_status` | `active` · `completed` · `orphan_exit` · `denied_entry` |
+| `status` | `anprc_visit_status` | `active` · `completed` · `orphan_exit` · `denied_entry` |
 | `notes` | VARCHAR(255) | Free-form (dipakai untuk mencatat alasan FAIL pada `denied_entry`) |
 
 Transisi status:
@@ -195,7 +205,7 @@ dipakai agar `findActiveVisit()` menjadi O(index lookup).
 
 ### 6. MQTT — antrian outbound + log inbound
 
-#### `mqtt_outbound_queue`
+#### `anprc_mqtt_outbound_queue`
 Platform tidak pernah memanggil `mqtt.publish()` secara langsung. Apa pun
 yang ditujukan ke perangkat MQTT diantrekan di sini; Python worker menguras
 antrian setiap 3 detik dan meng-ACK via `/api/mqtt-queue/{id}/sent|failed`.
@@ -206,7 +216,7 @@ Bertahan terhadap restart backend.
 | `device_sn` | VARCHAR(64) NOT NULL | Perangkat tujuan |
 | `command_name` | VARCHAR(64) NOT NULL | mis. `white_list_operator`, `tts_voice` |
 | `payload` | JSONB NOT NULL | Body perintah MQTT |
-| `status` | `mqtt_queue_status` | `pending` → `sent` ‖ `failed` |
+| `status` | `anprc_mqtt_queue_status` | `pending` → `sent` ‖ `failed` |
 | `attempts` | INT | Worker menambah setiap percobaan |
 | `last_error` | TEXT | Alasan kegagalan terakhir |
 | `created_at`, `sent_at` | TIMESTAMP | UTC |
@@ -215,7 +225,7 @@ Indeks: komposit `idx_mq_status_id (status, id)` untuk query worker
 "beri saya N berikutnya yang pending"; `idx_mq_device` untuk filter per
 perangkat di halaman MQTT Logs.
 
-#### `mqtt_inbound_log`
+#### `anprc_mqtt_inbound_log`
 Setiap pesan MQTT yang worker subscribe (`device/+/message/up/+`) mendapat
 satu baris. Dipakai oleh halaman MQTT Logs dan feed "Recent Plates" pada
 dashboard.
@@ -234,7 +244,7 @@ Indeks: `idx_mqtt_in_sn`, `idx_mqtt_in_name`,
 komposit `idx_mqtt_in_sn_recv (device_sn, received_at DESC)`,
 partial `idx_mqtt_in_plate ON (license_plate) WHERE license_plate IS NOT NULL`.
 
-### 7. Audit HTTP inbound — `inbound_events_raw`
+### 7. Audit HTTP inbound — `anprc_inbound_events_raw`
 
 Robot S300 berbicara HTTP ke platform. Setiap callback S300 yang masuk
 mendapat baris mentah di sini **sebelum** parsing apa pun, sehingga kita bisa
@@ -249,7 +259,7 @@ replay event yang korup kemudian jika ada bug kode yang memakannya.
 | `raw_body` | TEXT | Body POST verbatim |
 | `received_at` | TIMESTAMP NOT NULL DEFAULT NOW() | UTC |
 
-### 8. Allowlist VIP — `vip_plates`
+### 8. Allowlist VIP — `anprc_vip_plates`
 
 Plat di sini melewati seluruh siklus S300: inspeksi dibuat dengan
 `state='vip_skipped'`, `decision='vip_pass'`, blocker langsung terbuka, tanpa
@@ -261,15 +271,15 @@ panggilan S300.
 | `description` | VARCHAR(255) |
 | `enabled` | SMALLINT 0/1 — soft-disable |
 
-### 9. Prompt audio — `audio_prompts`
+### 9. Prompt audio — `anprc_audio_prompts`
 
 Tabel referensi dari klip audio TTS terindeks yang dapat diminta platform
 untuk diputar S300 (`/api/v1/device-s300/audio-prompt`). Default
-`failure_audio_index` pada `channels` adalah `7` ("silakan mundur").
+`failure_audio_index` pada `anprc_channels` adalah `7` ("silakan mundur").
 
 Keunikan komposit: `(audio_index, language)`.
 
-### 10. Auth — `users`
+### 10. Auth — `anprc_users`
 
 Platform melakukan autentikasi via SSO dari portal induk (lihat
 [`DEV_LOGIN.id.md`](./DEV_LOGIN.id.md)). Tabel ini menyimpan **shadow rows** —
@@ -283,14 +293,14 @@ ditebak karena user SSO tidak pernah login dengan password.
 | `username` | VARCHAR(64) UNIQUE | Mencerminkan username portal induk |
 | `password_hash` | VARCHAR(255) NOT NULL | Acak untuk user SSO — tidak pernah diverifikasi |
 | `display_name` | VARCHAR(128) | Disinkron dari induk pada setiap login |
-| `role` | `user_role` | `admin` · `operator` · `viewer` — dipetakan dari peran induk |
+| `role` | `anprc_user_role` | `admin` · `operator` · `viewer` — dipetakan dari peran induk |
 | `enabled` | SMALLINT 0/1 | Diset 1 pada setiap SSO sukses; 0 untuk mengunci |
 
 Baris di-upsert oleh `AuthController::sso` pada setiap login sukses. Dengan
 `auth.dev_bypass = true` di `config.php`, username apa pun membuat baris
 dengan `role = 'admin'` (memudahkan pengembangan lokal).
 
-### 11. Konfigurasi — `settings`
+### 11. Konfigurasi — `anprc_settings`
 
 Penyimpanan key/value sederhana. Hot-reload oleh worker setiap 10 detik.
 
@@ -300,13 +310,13 @@ Penyimpanan key/value sederhana. Hot-reload oleh worker setiap 10 detik.
 | `default_s300_base_url` | `http://192.168.1.50:8080` | Dipakai saat membuat channel baru |
 | `mqtt_broker_url` | `ws://localhost:8083/mqtt` | Endpoint MQTT WebSocket frontend |
 | `uvis_image_dir`, `xray_image_dir` | `uploads/uvis`, `uploads/xray` | Path penyimpanan |
-| `vip_plates` | kosong | Daftar comma-separated legacy (pakai tabel `vip_plates` saja) |
+| `vip_plates` | kosong | Daftar comma-separated legacy (pakai tabel `anprc_vip_plates` saja) |
 | `auto_start_s300` | `0` | Worker auto-trigger `/come` pada deteksi saat `1` |
 | `auto_start_channel` | `RJ001` | Channel fallback saat SN tidak ter-mapping |
 | `blocker_auto_close_sec` | `8` | Detik kolom tetap Lowered setelah PASS |
 | `worker_last_seen_at` | (di-set saat runtime) | Heartbeat ditulis oleh setiap cron tick |
 
-### 12. Jejak audit — `operation_log`
+### 12. Jejak audit — `anprc_operation_log`
 
 Log append-only dari setiap aksi platform — baik keputusan otomatis maupun
 intervensi manual operator. Memberi tenaga pada tab "Operations" pada detail
@@ -319,7 +329,7 @@ inspeksi dan halaman **Log Audit** di sidebar (Diagnostik → Log Audit).
 | `inspection_id` | BIGINT | |
 | `action` | VARCHAR(64) NOT NULL | Lihat katalog aksi di bawah |
 | `request_payload`, `response_payload` | JSONB | Kedua sisi pemanggilan |
-| `status` | `op_status` | `success` · `failed` |
+| `status` | `anprc_op_status` | `success` · `failed` |
 | `error_message` | TEXT | Diisi saat gagal |
 
 Indeks pada `(actor_username)`, `(channel_no)`, `(inspection_id)`, `(action)`,
@@ -348,10 +358,10 @@ Indeks pada `(actor_username)`, `(channel_no)`, `(inspection_id)`, `(action)`,
 Skema sengaja tidak memakai constraint `FOREIGN KEY`. Setiap tabel "anak"
 menyimpan ID integer parent, tapi FK ditegakkan di lapisan aplikasi. Alasan:
 
-- Callback S300 (`inspection_status_logs`, `face_images`, dll.) bisa tiba
+- Callback S300 (`anprc_inspection_status_logs`, `face_images`, dll.) bisa tiba
   sebelum platform membuat baris inspeksi parent.
-- Tabel audit append-only (`vehicles`, `inbound_events_raw`, `operation_log`,
-  `mqtt_inbound_log`) harus menerima baris meskipun entity terkait sudah
+- Tabel audit append-only (`anprc_vehicles`, `anprc_inbound_events_raw`, `anprc_operation_log`,
+  `anprc_mqtt_inbound_log`) harus menerima baris meskipun entity terkait sudah
   hard-deleted.
 - Migrasi skema selama fase pengembangan aktif lebih mudah tanpa harus
   memelihara cascade FK.
@@ -424,7 +434,7 @@ constraint:
    tick cron, dibaca oleh dashboard. Tidak perlu tabel heartbeat khusus,
    tidak perlu IPC.
 
-4. **Log inbound append-only** (`inbound_events_raw`, `mqtt_inbound_log`) —
+4. **Log inbound append-only** (`anprc_inbound_events_raw`, `anprc_mqtt_inbound_log`) —
    bahkan saat parsing downstream gagal, sinyal mentah tetap tersimpan untuk
    replay atau analisis forensik.
 
@@ -434,7 +444,7 @@ constraint:
 
 - Satu shadow user `admin` (tidak ada password yang dapat dipakai — SSO satu-
   satunya jalur login; lihat [`DEV_LOGIN.id.md`](./DEV_LOGIN.id.md))
-- Baris `settings` default untuk nama platform, broker MQTT, flag auto-start,
+- Baris `anprc_settings` default untuk nama platform, broker MQTT, flag auto-start,
   delay close blocker
 - Satu starter `channel` `RJ001` (entry)
 

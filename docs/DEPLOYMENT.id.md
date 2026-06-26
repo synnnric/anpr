@@ -438,7 +438,7 @@ Hubungkan ke Prometheus / Nagios / monitoring pilihan Anda.
 | Re-deploy frontend | rsync `dist/` baru menimpa yang lama — tidak perlu restart |
 | Terapkan migrasi SQL baru | Letakkan `migration_NNN.sql` di `backend/database/`, jalankan `psql -d anpr_s300 -f migration_NNN.sql` |
 | Rotasi log | Sudah ditangani logrotate untuk Apache + mosquitto; worker PHP log ke journald |
-| Reset channel macet manual | UPDATE `inspections` SET `state='completed'`, `decision='fail'` WHERE id=X; lalu watchdog akan melepaskan channel |
+| Reset channel macet manual | UPDATE `anprc_inspections` SET `state='completed'`, `decision='fail'` WHERE id=X; lalu watchdog akan melepaskan channel |
 
 ## 11. Prosedur Upgrade
 
@@ -483,7 +483,7 @@ Hubungkan ke Prometheus / Nagios / monitoring pilihan Anda.
   aktif — AutoTrigger browser sudah dihapus di build ini tapi jika Anda
   mengaktifkannya kembali untuk testing, nonaktifkan di prod agar tidak
   ada double `/come`.
-- ❌ Jangan edit manual baris `inspections` saat worker hidup (kontensi lock +
+- ❌ Jangan edit manual baris `anprc_inspections` saat worker hidup (kontensi lock +
   race decision).
 - ❌ Jangan simpan password root MySQL di `config.php` — pakai user `anpr` khusus.
 

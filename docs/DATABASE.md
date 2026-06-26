@@ -4,6 +4,16 @@ PostgreSQL 13+ schema for the ANPR + S300 platform. Canonical source:
 [`backend/database/schema.sql`](../backend/database/schema.sql) — this document
 mirrors it for humans.
 
+> **`anprc_` prefix (shared-database namespacing).** Production runs in a
+> PostgreSQL database shared with another platform, so every ANPR **table**,
+> **ENUM type**, and the `updated_at` trigger **function** carries an `anprc_`
+> prefix (e.g. `anprc_channels`, `anprc_inspection_state`). **Columns are NOT
+> prefixed** — they are scoped to their table and can never collide, and keeping
+> them leaves the REST/JSON field names (and the frontend) unchanged. Index,
+> constraint, and trigger *names* keep their original form (e.g. `idx_channels_kind`)
+> — they bind to the renamed objects by OID. Existing databases are migrated by
+> `backend/database/migrations/2026-06-26_rename_to_anprc_prefix.sql`.
+
 ---
 
 ## Conventions
@@ -19,26 +29,26 @@ mirrors it for humans.
 - **JSON payloads:** `JSONB` so they're query-able with the `->`, `->>`, and
   `@>` operators.
 - **Updated-at triggers:** four tables maintain `updated_at` automatically via
-  the `trg_set_updated_at()` function — `channels`, `inspections`, `visits`,
-  `settings`. Every other table is append-only or uses manual updates.
+  the `anprc_trg_set_updated_at()` function — `anprc_channels`, `anprc_inspections`, `anprc_visits`,
+  `anprc_settings`. Every other table is append-only or uses manual updates.
 
 ## Enum types
 
 | Enum | Values |
 |---|---|
-| `inspection_state` | `pending`, `started`, `inspecting`, `resetting`, `completed`, `emergency_stop`, `failed`, `vip_skipped` |
-| `inspection_decision` | `pending`, `pass`, `suspect`, `fail`, `vip_pass` |
-| `channel_kind` | `entry`, `exit` |
-| `visit_status` | `active`, `completed`, `orphan_exit`, `denied_entry` |
-| `user_role` | `admin`, `operator`, `viewer` |
-| `op_status` | `success`, `failed` |
-| `mqtt_queue_status` | `pending`, `sent`, `failed` |
+| `anprc_inspection_state` | `pending`, `started`, `inspecting`, `resetting`, `completed`, `emergency_stop`, `failed`, `vip_skipped` |
+| `anprc_inspection_decision` | `pending`, `pass`, `suspect`, `fail`, `vip_pass` |
+| `anprc_channel_kind` | `entry`, `exit` |
+| `anprc_visit_status` | `active`, `completed`, `orphan_exit`, `denied_entry` |
+| `anprc_user_role` | `admin`, `operator`, `viewer` |
+| `anprc_op_status` | `success`, `failed` |
+| `anprc_mqtt_queue_status` | `pending`, `sent`, `failed` |
 
 ---
 
 ## Tables — grouped by concern
 
-### 1. Topology — `channels`
+### 1. Topology — `anprc_channels`
 
 The platform's map of physical gates. Every lane / barrier is a channel row;
 all per-lane configuration (which ANPR camera, which S300, which road blocker)
@@ -55,13 +65,13 @@ lives here.
 | `uvis_timeout_sec` | INT NOT NULL DEFAULT 30 | UVIS-scan timeout; FAIL after this |
 | `failure_audio_index` | INT DEFAULT 7 | TTS index played on FAIL |
 | `name` | VARCHAR(128) | Human-readable label |
-| `kind` | `channel_kind` NOT NULL DEFAULT `entry` | Entry or exit |
+| `kind` | `anprc_channel_kind` NOT NULL DEFAULT `entry` | Entry or exit |
 | `paired_channel_id` | INT | The matching entry/exit pair for whitelist routing |
 | `enabled` | SMALLINT 0/1 | Soft-disable without deleting |
 
 Indexes: `idx_channels_anpr_sn`, `idx_channels_kind`, `idx_channels_paired`.
 
-### 2. Detection — `vehicles`
+### 2. Detection — `anprc_vehicles`
 
 Append-only audit log. **Every plate the ANPR sees gets a row**, regardless of
 whether it triggers an inspection.
@@ -82,12 +92,12 @@ whether it triggers an inspection.
 
 Indexes: `idx_vehicles_plate`, `idx_vehicles_detected`, `idx_vehicles_unique`.
 
-### 3. Inspection lifecycle — `inspections`
+### 3. Inspection lifecycle — `anprc_inspections`
 
 The heart of the system. One row per S300 cycle. Holds **two parallel
 state fields**:
 
-- `state` (`inspection_state`) — the platform's lifecycle: pending → started →
+- `state` (`anprc_inspection_state`) — the platform's lifecycle: pending → started →
   inspecting → resetting → completed
 - `current_operating_state` (SMALLINT 0-6) — direct mirror of what the S300
   most recently reported via `work-status` (cmd 322)
@@ -107,8 +117,8 @@ with `review_status='pending'` and **no side-effects run** (no road blocker, no
 | `channel_no` | VARCHAR(32) NOT NULL | Lane this inspection ran on |
 | `vehicle_id` | BIGINT | FK to `vehicles.id` — captured at `/come` time |
 | `license_plate` | VARCHAR(32) NOT NULL | |
-| `state` | `inspection_state` | Platform lifecycle |
-| `decision` | `inspection_decision` | `pending`, `pass`, `suspect`, `fail`, `vip_pass` |
+| `state` | `anprc_inspection_state` | Platform lifecycle |
+| `decision` | `anprc_inspection_decision` | `pending`, `pass`, `suspect`, `fail`, `vip_pass` |
 | `decision_reason` | VARCHAR(255) | Why (`Undercarriage clean`, `UVIS scan not received within timeout`, …) |
 | `decision_at`, `decision_timeout_at` | TIMESTAMP | When decided, when it would have timed out |
 | `review_status` | VARCHAR(16) | NULL normally; `pending` while a SUSPECT awaits manual review; `approved`/`rejected` once an operator decides |
@@ -128,7 +138,7 @@ Indexes: `idx_insp_channel`, `idx_insp_plate`, `idx_insp_state`,
 - **Partial unique index** `uq_one_active_inspection_per_channel` —
   ```
   CREATE UNIQUE INDEX uq_one_active_inspection_per_channel
-      ON inspections (channel_no)
+      ON anprc_inspections (channel_no)
       WHERE state IN ('pending','started','inspecting','resetting');
   ```
   Race-proofs the busy-guard. Two `/come` arriving at the same millisecond
@@ -144,28 +154,28 @@ All keyed by `inspection_id` (a soft FK — no enforced reference because
 S300 callbacks can arrive before the platform creates the inspection row, and
 we want to keep the raw signal).
 
-#### `inspection_status_logs`
+#### `anprc_inspection_status_logs`
 Every `work-status` (cmd 322) callback. Useful for reconstructing the S300's
 own timeline. `operating_state` is the SMALLINT 0-6 enum; `raw_payload` keeps
 the full JSON.
 
-#### `inspection_face_images`
+#### `anprc_inspection_face_images`
 Driver/passenger photos pushed via the `face-image` (cmd 323) endpoint. Stored
 as URLs that point at the platform's `uploads/` directory.
 
-#### `inspection_video_streams`
+#### `anprc_inspection_video_streams`
 Live MJPEG/RTSP URLs from the S300 cameras (`video-record`, cmd 325).
 `camera_code` is the S300's internal channel label (e.g. `A`, `B`).
 
-#### `inspection_uvis` + `inspection_uvis_coords`
+#### `anprc_inspection_uvis` + `anprc_inspection_uvis_coords`
 Undercarriage scan result. `image_type` = 0 (clean) / 1 (suspect).
 `object_count` is the number of detected foreign objects. When `>0`, child
-rows in `inspection_uvis_coords` give bounding-box coordinates and confidence
+rows in `anprc_inspection_uvis_coords` give bounding-box coordinates and confidence
 for each detected object.
 
 ---
 
-### 5. Visits & reporting — `visits`
+### 5. Visits & reporting — `anprc_visits`
 
 The user-facing record of "vehicle X came in at Y and left at Z". One row per
 arrival; updates in place on exit.
@@ -177,7 +187,7 @@ arrival; updates in place on exit.
 | `entry_channel_no`, `exit_channel_no` | VARCHAR(32) | Where it came in / went out |
 | `entry_inspection_id` | BIGINT | FK to the inspection that admitted it |
 | `entry_at`, `exit_at` | TIMESTAMP | UTC; computed dwell = `exit_at - entry_at` |
-| `status` | `visit_status` | `active` · `completed` · `orphan_exit` · `denied_entry` |
+| `status` | `anprc_visit_status` | `active` · `completed` · `orphan_exit` · `denied_entry` |
 | `notes` | VARCHAR(255) | Free-form (used to log the FAIL reason on `denied_entry`) |
 
 Status transitions:
@@ -202,7 +212,7 @@ used to make `findActiveVisit()` O(index lookup).
 
 ### 6. MQTT — outbound queue + inbound log
 
-#### `mqtt_outbound_queue`
+#### `anprc_mqtt_outbound_queue`
 The platform never calls `mqtt.publish()` directly. Anything destined for an
 MQTT device is enqueued here; the Python worker drains the queue every 3s and
 acks via `/api/mqtt-queue/{id}/sent|failed`. Survives backend restarts.
@@ -212,7 +222,7 @@ acks via `/api/mqtt-queue/{id}/sent|failed`. Survives backend restarts.
 | `device_sn` | VARCHAR(64) NOT NULL | Target device |
 | `command_name` | VARCHAR(64) NOT NULL | e.g. `white_list_operator`, `tts_voice` |
 | `payload` | JSONB NOT NULL | Body of the MQTT command |
-| `status` | `mqtt_queue_status` | `pending` → `sent` ‖ `failed` |
+| `status` | `anprc_mqtt_queue_status` | `pending` → `sent` ‖ `failed` |
 | `attempts` | INT | Worker increments on each try |
 | `last_error` | TEXT | Last failure reason |
 | `created_at`, `sent_at` | TIMESTAMP | UTC |
@@ -221,7 +231,7 @@ Indexes: composite `idx_mq_status_id (status, id)` for the
 "give me the next N pending" worker query; `idx_mq_device` for per-device
 filtering on the MQTT Logs page.
 
-#### `mqtt_inbound_log`
+#### `anprc_mqtt_inbound_log`
 Every MQTT message the worker subscribes to (`device/+/message/up/+`) gets a
 row. Used by the MQTT Logs page and the dashboard's "Recent Plates" feed.
 
@@ -239,7 +249,7 @@ Indexes: `idx_mqtt_in_sn`, `idx_mqtt_in_name`,
 composite `idx_mqtt_in_sn_recv (device_sn, received_at DESC)`,
 partial `idx_mqtt_in_plate ON (license_plate) WHERE license_plate IS NOT NULL`.
 
-### 7. HTTP inbound audit — `inbound_events_raw`
+### 7. HTTP inbound audit — `anprc_inbound_events_raw`
 
 The S300 robot speaks HTTP to the platform. Every incoming S300 callback gets
 a raw row here **before** any parsing, so we can replay corrupted events later
@@ -254,7 +264,7 @@ if a code bug ate them.
 | `raw_body` | TEXT | Verbatim POST body |
 | `received_at` | TIMESTAMP NOT NULL DEFAULT NOW() | UTC |
 
-### 8. VIP allowlist — `vip_plates`
+### 8. VIP allowlist — `anprc_vip_plates`
 
 Plates here bypass the entire S300 cycle: inspection is created with
 `state='vip_skipped'`, `decision='vip_pass'`, blocker opens immediately, no
@@ -266,15 +276,15 @@ S300 call.
 | `description` | VARCHAR(255) |
 | `enabled` | SMALLINT 0/1 — soft-disable |
 
-### 9. Audio prompts — `audio_prompts`
+### 9. Audio prompts — `anprc_audio_prompts`
 
 Reference table of indexed TTS audio clips the platform can ask the S300 to
 play (`/api/v1/device-s300/audio-prompt`). The default `failure_audio_index`
-on `channels` is `7` ("please back out").
+on `anprc_channels` is `7` ("please back out").
 
 Composite uniqueness: `(audio_index, language)`.
 
-### 10. Auth — `users`
+### 10. Auth — `anprc_users`
 
 The platform authenticates via SSO from a parent portal (see [`DEV_LOGIN.md`](./DEV_LOGIN.md)).
 This table holds **shadow rows** — one per username the SSO endpoint has seen.
@@ -287,14 +297,14 @@ unguessable random value because SSO users never log in with a password.
 | `username` | VARCHAR(64) UNIQUE | Mirrors the parent platform's username |
 | `password_hash` | VARCHAR(255) NOT NULL | Random for SSO users — never verified |
 | `display_name` | VARCHAR(128) | Mirrored from parent on each login |
-| `role` | `user_role` | `admin` · `operator` · `viewer` — mapped from parent role |
+| `role` | `anprc_user_role` | `admin` · `operator` · `viewer` — mapped from parent role |
 | `enabled` | SMALLINT 0/1 | Set to 1 on every successful SSO; 0 to lock out |
 
 Rows are upserted by `AuthController::sso` on every successful login. With
 `auth.dev_bypass = true` in `config.php`, any username creates a row with
 `role = 'admin'` (handy for local dev).
 
-### 11. Configuration — `settings`
+### 11. Configuration — `anprc_settings`
 
 Simple key/value store. Hot-reloaded by the worker every 10s.
 
@@ -304,7 +314,7 @@ Simple key/value store. Hot-reloaded by the worker every 10s.
 | `default_s300_base_url` | `http://192.168.1.50:8080` | Used when creating new channels |
 | `mqtt_broker_url` | `ws://localhost:8083/mqtt` | Frontend MQTT WebSocket endpoint |
 | `uvis_image_dir`, `xray_image_dir` | `uploads/uvis`, `uploads/xray` | Storage paths |
-| `vip_plates` | empty | Legacy comma-separated list (use `vip_plates` table instead) |
+| `vip_plates` | empty | Legacy comma-separated list (use the `anprc_vip_plates` table instead) |
 | `auto_start_s300` | `0` | Worker auto-triggers `/come` on detection when `1` |
 | `auto_start_channel` | `RJ001` | Fallback channel when SN doesn't map |
 | `blocker_auto_close_sec` | `8` | Seconds the column stays Lowered after PASS |
@@ -314,7 +324,7 @@ Simple key/value store. Hot-reloaded by the worker every 10s.
 | `entry_gate_pulse_ms` | `1000` | Pulse duration (ms) when `entry_gate_value=2` |
 | `worker_last_seen_at` | (set at runtime) | Heartbeat written by every cron tick; stored as an offset-aware GMT+7 ISO-8601 string (not naive UTC) so it reads unambiguously |
 
-### 12. Audit trail — `operation_log`
+### 12. Audit trail — `anprc_operation_log`
 
 Append-only log of every platform action — both auto-decisions and manual
 operator interventions. Powers the inspection-detail "Operations" tab and the
@@ -327,7 +337,7 @@ top-level **Audit Log** page (Diagnostics → Audit Log).
 | `inspection_id` | BIGINT | |
 | `action` | VARCHAR(64) NOT NULL | See action catalog below |
 | `request_payload`, `response_payload` | JSONB | Both sides of the call |
-| `status` | `op_status` | `success` · `failed` |
+| `status` | `anprc_op_status` | `success` · `failed` |
 | `error_message` | TEXT | Populated on failure |
 
 Indexes on `(actor_username)`, `(channel_no)`, `(inspection_id)`, `(action)`,
@@ -357,10 +367,10 @@ The schema deliberately uses no `FOREIGN KEY` constraints. Each "child" table
 keeps an integer parent ID, but the FK is enforced at the application layer.
 Rationale:
 
-- S300 callbacks (`inspection_status_logs`, `face_images`, etc.) can arrive
+- S300 callbacks (`anprc_inspection_status_logs`, `face_images`, etc.) can arrive
   before the platform creates the parent inspection row.
-- Append-only audit tables (`vehicles`, `inbound_events_raw`, `operation_log`,
-  `mqtt_inbound_log`) must accept rows even when the related entity has been
+- Append-only audit tables (`anprc_vehicles`, `anprc_inbound_events_raw`, `anprc_operation_log`,
+  `anprc_mqtt_inbound_log`) must accept rows even when the related entity has been
   hard-deleted.
 - Schema migrations during the active development phase are simpler without
   FK cascades to maintain.
@@ -431,7 +441,7 @@ The relationship map below is therefore implicit, not constraint-enforced:
 3. **Settings-table heartbeat** — `worker_last_seen_at` updated by the cron
    tick, read by the dashboard. No special heartbeat table needed, no IPC.
 
-4. **Append-only inbound logs** (`inbound_events_raw`, `mqtt_inbound_log`) —
+4. **Append-only inbound logs** (`anprc_inbound_events_raw`, `anprc_mqtt_inbound_log`) —
    even when downstream parsing fails, the raw signal is preserved for replay
    or forensic analysis.
 
@@ -441,7 +451,7 @@ The relationship map below is therefore implicit, not constraint-enforced:
 
 - One `admin` shadow user (no usable password — SSO is the only login path;
   see [`DEV_LOGIN.md`](./DEV_LOGIN.md))
-- Default `settings` rows for platform name, MQTT broker, auto-start flags,
+- Default `anprc_settings` rows for platform name, MQTT broker, auto-start flags,
   blocker close delay
 - One starter `channel` `RJ001` (entry)
 

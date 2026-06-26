@@ -231,22 +231,22 @@ denied_entry  (decision=fail) 6  (Self-test)
 
 | Table | Purpose |
 |---|---|
-| `channels` | One row per lane / gate (entry or exit) — paired via `paired_channel_id` |
-| `vehicles` | Audit log of every ANPR plate detection (entry and exit). `full_image_path` / `small_image_path` = saved `ivs_result` snapshots (full scene + plate close-up; files in `uploads/vehicles/`, DB stores only the path) |
-| `visits` | One row per "entry → exit" cycle. Status: active, completed, orphan_exit, denied_entry |
-| `inspections` | One row per S300 inspection lifecycle. `review_status` (pending/approved/rejected) + `reviewed_by` + `reviewed_at` track manual review of a SUSPECT |
-| `inspection_status_logs` | Every work-status push from S300 |
-| `inspection_face_images` | Face capture URLs |
-| `inspection_video_streams` | RTSP stream addresses for the 6 robot-arm cameras |
-| `inspection_uvis` + `_coords` | Undercarriage scan images + foreign-object bounding boxes |
+| `anprc_channels` | One row per lane / gate (entry or exit) — paired via `paired_channel_id` |
+| `anprc_vehicles` | Audit log of every ANPR plate detection (entry and exit). `full_image_path` / `small_image_path` = saved `ivs_result` snapshots (full scene + plate close-up; files in `uploads/vehicles/`, DB stores only the path) |
+| `anprc_visits` | One row per "entry → exit" cycle. Status: active, completed, orphan_exit, denied_entry |
+| `anprc_inspections` | One row per S300 inspection lifecycle. `review_status` (pending/approved/rejected) + `reviewed_by` + `reviewed_at` track manual review of a SUSPECT |
+| `anprc_inspection_status_logs` | Every work-status push from S300 |
+| `anprc_inspection_face_images` | Face capture URLs |
+| `anprc_inspection_video_streams` | RTSP stream addresses for the 6 robot-arm cameras |
+| `anprc_inspection_uvis` + `_coords` | Undercarriage scan images + foreign-object bounding boxes |
 | `inspection_xray` + `_alarms` | X-ray inspection (received but not used in this deployment) |
-| `vip_plates` | Whitelist of plates that skip S300 inspection |
-| `audio_prompts` | Custom audio prompts pushed to S300 |
-| `users` | Operator accounts |
-| `operation_log` | Audit trail of every backend action |
-| `settings` | Key-value system settings (`auto_start_s300`, `auto_start_channel`, `blocker_close_mode`, ANPR-gate `entry_gate_open`/`entry_gate_io`/`entry_gate_value`/`entry_gate_pulse_ms`, `worker_last_seen_at` heartbeat) |
-| `inbound_events_raw` | Raw S300 callbacks (for debugging/replay) |
-| `mqtt_outbound_queue` | Pending MQTT commands the worker should publish |
+| `anprc_vip_plates` | Whitelist of plates that skip S300 inspection |
+| `anprc_audio_prompts` | Custom audio prompts pushed to S300 |
+| `anprc_users` | Operator accounts |
+| `anprc_operation_log` | Audit trail of every backend action |
+| `anprc_settings` | Key-value system settings (`auto_start_s300`, `auto_start_channel`, `blocker_close_mode`, ANPR-gate `entry_gate_open`/`entry_gate_io`/`entry_gate_value`/`entry_gate_pulse_ms`, `worker_last_seen_at` heartbeat) |
+| `anprc_inbound_events_raw` | Raw S300 callbacks (for debugging/replay) |
+| `anprc_mqtt_outbound_queue` | Pending MQTT commands the worker should publish |
 
 ## 9. API surface (PHP backend)
 
@@ -292,7 +292,7 @@ denied_entry  (decision=fail) 6  (Self-test)
 | `device/{sn}/message/up/gpio_in` | camera → platform | IO input event |
 | `device/{sn}/message/up/barr_gate_status` | camera → platform | Barrier status |
 | `device/{sn}/message/down/white_list_operator` | platform → camera | Add/remove whitelist plate |
-| `device/{sn}/message/down/{cmd}` | platform → camera | Other commands (`ivs_trigger`, `gpio_out`, `gate_direct_open`, etc.) |
+| `device/{sn}/message/down/{cmd}` | platform → camera | Other commands (`ivs_trigger`, `gpio_out`, `serial_data`, etc.) |
 | `device/{sn}/message/down/{cmd}/reply` | camera → platform | Ack for the above |
 
 ## 11. Live event types (SSE)

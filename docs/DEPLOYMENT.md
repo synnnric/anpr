@@ -453,7 +453,7 @@ Hook these into Prometheus / Nagios / your monitoring of choice.
 | Re-deploy frontend | rsync new `dist/` over the old one — no restart needed |
 | Apply a new SQL migration | Drop `migration_NNN.sql` in `backend/database/`, run `psql -d anpr_s300 -f migration_NNN.sql` |
 | Rotate logs | Already handled by logrotate for Apache + mosquitto; PHP worker logs to journald |
-| Reset a stuck channel manually | UPDATE `inspections` SET `state='completed'`, `decision='fail'` WHERE id=X; then watchdog releases the channel |
+| Reset a stuck channel manually | UPDATE `anprc_inspections` SET `state='completed'`, `decision='fail'` WHERE id=X; then watchdog releases the channel |
 
 ## 11. Upgrade procedure
 
@@ -497,7 +497,7 @@ Hook these into Prometheus / Nagios / your monitoring of choice.
 - ❌ Don't run the worker and dashboard simultaneously with the **browser**
   trigger enabled — the browser AutoTrigger has been removed in this build but
   if you re-enable it for testing, disable in prod to avoid double `/come` calls.
-- ❌ Don't manually edit rows in `inspections` while the worker is live (lock
+- ❌ Don't manually edit rows in `anprc_inspections` while the worker is live (lock
   contention + decision race).
 - ❌ Don't store the MySQL root password in `config.php` — use the dedicated
   `anpr` user.

@@ -20,7 +20,7 @@ komponen tingkat tinggi.
 
 Platform sendiri berperan sebagai orchestrator. Platform tidak pernah
 menjangkau perangkat secara langsung melalui alamat yang di-hardcode — setiap
-endpoint diambil dari tabel `channels` saat runtime, sehingga mengganti
+endpoint diambil dari tabel `anprc_channels` saat runtime, sehingga mengganti
 hardware adalah perubahan konfigurasi, bukan perubahan kode.
 
 ---
@@ -57,9 +57,8 @@ terdokumentasi; varian sn-first setara.
 | Topik | Kapan platform mengirimnya | Payload (field kunci) |
 |-------|---------------------------|----------------------|
 | `device/{sn}/message/down/white_list_operator` | add one-time-pass di kamera exit (saat entry PASS / VIP_PASS) dan delete (saat deteksi exit) | `operator_type`: `add` ‖ `delete`; untuk add: `dldb_rec[].plate`, `enable_time`, `overdue_time`; untuk delete: `plate` |
-| `device/{sn}/message/down/gpio_out`            | buka gerbang barrier milik kamera entry (dikirim ke kamera ENTRY saat `/come`, saat pengenalan) — protokol §7.2 | `io` 0-3 (relay), `value` 0=OFF ‖ 1=ON ‖ 2=Pulse, `delay` ms 500-5000. Kamera meng-ACK di `.../down/gpio_out/reply` dengan `{code:200,...}` |
+| `device/{sn}/message/down/gpio_out`            | buka gerbang barrier milik kamera entry — dikirim ke kamera ENTRY saat `/come` saat pengenalan, dan oleh tombol override manual "Buka Gerbang Langsung" di halaman Device Control — protokol §7.2 | `io` 0-3 (relay), `value` 0=OFF ‖ 1=ON ‖ 2=Pulse, `delay` ms 500-5000. Kamera meng-ACK di `.../down/gpio_out/reply` dengan `{code:200,...}` |
 | `device/{sn}/message/down/tts_voice`           | prompt kegagalan ("silakan mundur") | audio terindeks |
-| `device/{sn}/message/down/gate_direct_open`    | paksa-buka barrier (manual override) | — |
 | `device/{sn}/message/down/{cmd}/reply`         | kamera meng-ACK setiap perintah down | `code`, `id` asli |
 
 **Gambar snapshot kendaraan.** Dari setiap `ivs_result`, worker mengekstrak
@@ -105,7 +104,7 @@ untuk perintah keluar.
 
 ### State S300 vs state platform
 
-Tabel `inspections` melacak keduanya:
+Tabel `anprc_inspections` melacak keduanya:
 
 - `current_operating_state` — cermin dari yang terakhir dilaporkan S300 (kolom
   = angka mentah 0-5 dari cmd 322).
@@ -128,7 +127,7 @@ PASS / VIP_PASS. Backend hanya MENURUNKAN (membuka); menaikkan adalah
 keputusan perangkat keras (`blocker_close_mode='hardware'`). Lihat
 `ROAD BLOCKER API.pdf`.
 
-Setiap baris `channels` membawa semua yang diperlukan:
+Setiap baris `anprc_channels` membawa semua yang diperlukan:
 
 ```
 rb_ip        VARCHAR(64)    mis. 127.0.0.1
@@ -160,7 +159,7 @@ Worker mengautentikasi ke broker dengan `MQTT_USERNAME` / `MQTT_PASSWORD` dari
 
 | Topik | Sumber |
 |-------|--------|
-| `device/{sn}/message/down/{cmd}` **dan** `{sn}/device/message/down/{cmd}` | dikuras dari `mqtt_outbound_queue` — di-publish ke kedua layout agar perangkat menerimanya pada bentuk apa pun yang di-subscribe-nya |
+| `device/{sn}/message/down/{cmd}` **dan** `{sn}/device/message/down/{cmd}` | dikuras dari `anprc_mqtt_outbound_queue` — di-publish ke kedua layout agar perangkat menerimanya pada bentuk apa pun yang di-subscribe-nya |
 
 ### Panggilan backend (HTTP)
 
@@ -260,7 +259,7 @@ ditutup.
 |------|---------------|
 | 1, 6, 8 (MQTT) | Halaman **MQTT Logs** — filter berdasarkan plat untuk melihat setiap pesan kamera terkait kendaraan tersebut |
 | 2 (keputusan worker) | stdout worker / `worker.err.log` |
-| 3-5 (S300 ↔ platform HTTP) | Halaman **S300 Inspection** → klik baris inspeksi untuk panel detail; event mentah juga terlihat di `inbound_events_raw` |
-| 5 (decision + executor) | Tabel `inspection_status_logs` |
+| 3-5 (S300 ↔ platform HTTP) | Halaman **S300 Inspection** → klik baris inspeksi untuk panel detail; event mentah juga terlihat di `anprc_inbound_events_raw` |
+| 5 (decision + executor) | Tabel `anprc_inspection_status_logs` |
 | 6 (queue) | Halaman **MQTT Logs** → tab Outbound |
 | 8 (penutupan visit) | Halaman **Visits & Reports** |

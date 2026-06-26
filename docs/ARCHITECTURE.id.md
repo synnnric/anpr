@@ -217,22 +217,22 @@ denied_entry  (decision=fail)     6  (Self-test)
 
 | Tabel | Tujuan |
 |---|---|
-| `channels` | Satu baris per lajur / gerbang (masuk atau keluar) — dipasangkan via `paired_channel_id` |
-| `vehicles` | Audit log setiap deteksi plat ANPR (masuk dan keluar) |
-| `visits` | Satu baris per siklus "masuk → keluar". Status: active, completed, orphan_exit, denied_entry |
-| `inspections` | Satu baris per siklus inspeksi S300 |
-| `inspection_status_logs` | Setiap push work-status dari S300 |
-| `inspection_face_images` | URL foto wajah |
-| `inspection_video_streams` | Alamat stream RTSP untuk 6 kamera lengan robot |
-| `inspection_uvis` + `_coords` | Gambar scan kolong + bounding box objek asing |
+| `anprc_channels` | Satu baris per lajur / gerbang (masuk atau keluar) — dipasangkan via `paired_channel_id` |
+| `anprc_vehicles` | Audit log setiap deteksi plat ANPR (masuk dan keluar) |
+| `anprc_visits` | Satu baris per siklus "masuk → keluar". Status: active, completed, orphan_exit, denied_entry |
+| `anprc_inspections` | Satu baris per siklus inspeksi S300 |
+| `anprc_inspection_status_logs` | Setiap push work-status dari S300 |
+| `anprc_inspection_face_images` | URL foto wajah |
+| `anprc_inspection_video_streams` | Alamat stream RTSP untuk 6 kamera lengan robot |
+| `anprc_inspection_uvis` + `_coords` | Gambar scan kolong + bounding box objek asing |
 | `inspection_xray` + `_alarms` | Inspeksi X-ray (diterima tapi tidak dipakai di deployment ini) |
-| `vip_plates` | Daftar plat yang lewati inspeksi S300 |
-| `audio_prompts` | Audio kustom yang dipush ke S300 |
-| `users` | Akun operator |
-| `operation_log` | Audit trail setiap aksi backend |
-| `settings` | Setting key-value sistem (`auto_start_s300`, `auto_start_channel`) |
-| `inbound_events_raw` | Callback S300 mentah (untuk debugging/replay) |
-| `mqtt_outbound_queue` | Perintah MQTT pending yang harus dipublish worker |
+| `anprc_vip_plates` | Daftar plat yang lewati inspeksi S300 |
+| `anprc_audio_prompts` | Audio kustom yang dipush ke S300 |
+| `anprc_users` | Akun operator |
+| `anprc_operation_log` | Audit trail setiap aksi backend |
+| `anprc_settings` | Setting key-value sistem (`auto_start_s300`, `auto_start_channel`) |
+| `anprc_inbound_events_raw` | Callback S300 mentah (untuk debugging/replay) |
+| `anprc_mqtt_outbound_queue` | Perintah MQTT pending yang harus dipublish worker |
 
 ## 9. Permukaan API (Backend PHP)
 
@@ -278,7 +278,7 @@ denied_entry  (decision=fail)     6  (Self-test)
 | `device/{sn}/message/up/gpio_in` | kamera → platform | Event input IO |
 | `device/{sn}/message/up/barr_gate_status` | kamera → platform | Status palang |
 | `device/{sn}/message/down/white_list_operator` | platform → kamera | Tambah/hapus plat dari whitelist |
-| `device/{sn}/message/down/{cmd}` | platform → kamera | Perintah lain (`ivs_trigger`, `gpio_out`, `gate_direct_open`, dll.) |
+| `device/{sn}/message/down/{cmd}` | platform → kamera | Perintah lain (`ivs_trigger`, `gpio_out`, `serial_data`, dll.) |
 | `device/{sn}/message/down/{cmd}/reply` | kamera → platform | Ack untuk di atas |
 
 ## 11. Tipe Event Live (SSE)

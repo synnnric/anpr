@@ -80,7 +80,7 @@ psql -h 127.0.0.1 -p 5433 -U anpr -d anpr_s300 -c "SELECT key_name, value FROM s
 ```
 
 **Cek dokumen:** `docs/DATABASE.md` mencantumkan setiap tabel. Daftar dari `\dt`
-harus cocok. Pastikan `settings` berisi `blocker_close_mode` (default `hardware`)
+harus cocok. Pastikan `anprc_settings` berisi `blocker_close_mode` (default `hardware`)
 dan `auto_start_s300`.
 
 **Kegagalan umum:**
@@ -343,7 +343,7 @@ worker/.venv/bin/python worker/worker.py
 
 **Buktikan tiap tanggung jawab worker terpisah:**
 1. **Pemicu inbound** — publish `ivs_result` palsu (lihat §4). Worker harus
-   me-log decode dan POST `/api/s300/come/...` (pantau backend / `operation_log`).
+   me-log decode dan POST `/api/s300/come/...` (pantau backend / `anprc_operation_log`).
 2. **Drain outbound** — enqueue perintah lewat verdict apa pun, lalu lihat worker
    publish (baris log `outbound: published ...`) dan menandai baris antrian `sent`.
 3. **Cron tick** — pastikan `/api/cron/tick` di-POST tiap `TICK_INTERVAL_S`.

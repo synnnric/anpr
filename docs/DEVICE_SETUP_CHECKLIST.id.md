@@ -7,7 +7,7 @@ Dokumen pendamping:
 - [`DEPLOYMENT.id.md`](./DEPLOYMENT.id.md) — install server / OS / service
 - [`COMMUNICATION.id.md`](./COMMUNICATION.id.md) — topik, endpoint, payload yang tepat
 - [`ARCHITECTURE.id.md`](./ARCHITECTURE.id.md) — alur tingkat tinggi
-- [`DATABASE.id.md`](./DATABASE.id.md) — referensi tabel `channels`
+- [`DATABASE.id.md`](./DATABASE.id.md) — referensi tabel `anprc_channels`
 
 ---
 
@@ -20,7 +20,7 @@ Dokumen pendamping:
   Get-Process node, python -ErrorAction SilentlyContinue
   ```
 - [ ] Catat IP/hostname production platform — setiap perangkat akan diarahkan ke sana.
-- [ ] Catat serial number / IP setiap perangkat — Anda akan menempelkannya ke tabel `channels`.
+- [ ] Catat serial number / IP setiap perangkat — Anda akan menempelkannya ke tabel `anprc_channels`.
 
 ---
 
@@ -160,7 +160,7 @@ Robot ini **HTTP, bukan MQTT**. Platform adalah HTTP server (untuk callback-nya)
 
 ### Sisi platform
 
-- [ ] Di baris `channels` untuk channel entry: `s300_base_url = 'http://<ip-arm>:<port-arm>'`.
+- [ ] Di baris `anprc_channels` untuk channel entry: `s300_base_url = 'http://<ip-arm>:<port-arm>'`.
   Platform akan memanggil `/api/v1/channel-s300/come/{channelNo}`, `/leave/{channelNo}`, dll. di URL ini.
 - [ ] `uvis_timeout_sec = 30` (atau berapa pun worst-case scan UVIS arm Anda). Inspeksi tanpa callback UVIS dalam tenggat ini otomatis FAIL.
 
@@ -190,7 +190,7 @@ Cross-check arm sungguhan dengan [`COMMUNICATION.id.md` → Robot Inspeksi S300]
 
 - [ ] **Nilai `operating_state` tetap dalam enum terdokumentasi** (0=ready · 1=inspecting · 2=resetting · 3=completed · 4=e-stop · 5=failed · 6=started). Buka inspeksi di halaman **Inspections** → kolom `current_operating_state` hanya boleh bernilai 0–6. Nilai di luar range (mis. 99) ⇒ revisi protokol berbeda di firmware.
 
-- [ ] **Semua perintah outbound sukses.** Buka `inspection_status_logs` untuk inspeksi tes:
+- [ ] **Semua perintah outbound sukses.** Buka `anprc_inspection_status_logs` untuk inspeksi tes:
   ```sql
   SELECT created_at, event, http_status, error
     FROM inspection_status_logs
@@ -207,7 +207,7 @@ Cross-check arm sungguhan dengan [`COMMUNICATION.id.md` → Robot Inspeksi S300]
   - [ ] `POST /read-work-status/{ch}` · **tujuan:** menanyakan ulang state arm saat ini jika callback `work-status` hilang di tengah jalan.
   - [ ] `POST /manual-reset/{ch}` · **tujuan:** mereset paksa arm yang stuck agar channel tidak tetap BUSY selamanya.
 
-  Keduanya terlihat di `inspection_status_logs`. Tidak ada baris itu → cron tidak berjalan.
+  Keduanya terlihat di `anprc_inspection_status_logs`. Tidak ada baris itu → cron tidak berjalan.
 
 ---
 
@@ -222,7 +222,7 @@ REST API, bukan MQTT. Sesuai [spec Qigong AIoT](../%E3%80%90SSRD251030-04305%E3%
 
 ### Sisi platform
 
-Di baris `channels` untuk channel entry:
+Di baris `anprc_channels` untuk channel entry:
 
 - [ ] `rb_ip` = IP controller
 - [ ] `rb_port` = port HTTP controller (default `8088`)
@@ -279,7 +279,7 @@ Setelah keempat perangkat sungguhan terpasang:
 
 - [ ] **Live entry** — lewatkan plat yang dikenal melalui jalur entry. Konfirmasi dalam urutan ini:
   1. Plat muncul di **MQTT Logs → Inbound** untuk SN entry
-  2. Baris `inspections` dibuat (state=`started` → `inspecting` → `resetting` → `completed`)
+  2. Baris `anprc_inspections` dibuat (state=`started` → `inspecting` → `resetting` → `completed`)
   3. Arm menyelesaikan scan UVIS-nya dalam `uvis_timeout_sec`
   4. **Recent Decisions** mencatat `pass` (atau `suspect` / `fail`)
   5. Pada PASS, road blocker turun, kendaraan melintas, ~8 dtk kemudian naik kembali
@@ -294,7 +294,7 @@ Setelah keempat perangkat sungguhan terpasang:
   - `decision = 'fail'`
   - Audio TTS kegagalan diputar di kamera/speaker
   - `visits.status = 'denied_entry'`
-- [ ] **Orphan exit** — lewatkan plat asing di kamera exit. Harus tetap terblok; baris `visits` dengan `status='orphan_exit'` muncul.
+- [ ] **Orphan exit** — lewatkan plat asing di kamera exit. Harus tetap terblok; baris `anprc_visits` dengan `status='orphan_exit'` muncul.
 - [ ] **Alarm heartbeat-loss** — matikan satu kamera. Dalam 30 dtk chip dashboard-nya berubah 🔴 **STALE / OFFLINE**. Hidupkan kembali; seharusnya pulih dalam 30 dtk.
 
 ---
@@ -302,14 +302,14 @@ Setelah keempat perangkat sungguhan terpasang:
 ## 8. Operasi / monitoring (setelah go-live)
 
 - [ ] Setup cron tick: timer systemd atau cron eksternal harus memanggil worker setiap 5 dtk (worker.py yang disertakan sudah melakukannya; cukup konfirmasi service `enabled`).
-- [ ] Konfirmasi `worker_last_seen_at` di `settings` di-update setiap 5 dtk (kartu Worker dashboard hijau).
+- [ ] Konfirmasi `worker_last_seen_at` di `anprc_settings` di-update setiap 5 dtk (kartu Worker dashboard hijau).
 - [ ] Tambahkan rotasi log untuk:
   - `C:\xampp\htdocs\anpr_backend\logs\app-*.log` (error PHP)
   - `worker/worker.err.log`
   - `/var/log/mosquitto/mosquitto.log`
 - [ ] Setup backup harian database `anpr_s300` (lihat DEPLOYMENT.id.md).
 - [ ] Konfigurasi monitor uptime eksternal untuk hit `/api/health` setiap menit.
-- [ ] Tentukan retention untuk `mqtt_inbound_log` — pada ~1 baris per kamera per 10 dtk, tabel ini tumbuh ~8.600 baris / kamera / hari. Jadwalkan harian `DELETE FROM mqtt_inbound_log WHERE received_at < NOW() - INTERVAL '30 days';` jika Anda tidak butuh history tak terbatas.
+- [ ] Tentukan retention untuk `anprc_mqtt_inbound_log` — pada ~1 baris per kamera per 10 dtk, tabel ini tumbuh ~8.600 baris / kamera / hari. Jadwalkan harian `DELETE FROM mqtt_inbound_log WHERE received_at < NOW() - INTERVAL '30 days';` jika Anda tidak butuh history tak terbatas.
 
 ---
 

@@ -79,7 +79,7 @@ psql -h 127.0.0.1 -p 5433 -U anpr -d anpr_s300 -c "SELECT key_name, value FROM s
 ```
 
 **Cross-check docs:** `docs/DATABASE.md` lists every table. The table list from
-`\dt` must match. Confirm `settings` contains `blocker_close_mode` (default
+`\dt` must match. Confirm `anprc_settings` contains `blocker_close_mode` (default
 `hardware`) and `auto_start_s300`.
 
 **Common failures:**
@@ -341,7 +341,7 @@ worker/.venv/bin/python worker/worker.py
 
 **Prove each worker responsibility in isolation:**
 1. **Inbound trigger** — publish a fake `ivs_result` (see §4). Worker should log
-   the decode and POST `/api/s300/come/...` (watch backend / `operation_log`).
+   the decode and POST `/api/s300/come/...` (watch backend / `anprc_operation_log`).
 2. **Outbound drain** — enqueue a command via any verdict, then watch the worker
    publish it (the `outbound: published ...` log line) and mark the queue row
    `sent`.

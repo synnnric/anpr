@@ -103,7 +103,7 @@ Anda seharusnya melihat:
 
 Username apa pun bekerja di dev — coba `?username=alice` atau
 `?username=operator` untuk menguji record shadow-user yang berbeda. Setiap
-username unik akan membuat baris di tabel `users` lokal.
+username unik akan membuat baris di tabel `anprc_users` lokal.
 
 ### Uji cepat dengan curl
 
@@ -182,5 +182,5 @@ Saat DB portal induk dapat diakses dari produksi:
 Lihat juga:
 - [`DEPLOYMENT.id.md`](./DEPLOYMENT.id.md) — setup produksi
 - [`ARCHITECTURE.id.md`](./ARCHITECTURE.id.md) §9 — daftar API lengkap
-- [`DATABASE.id.md`](./DATABASE.id.md) §10 — tabel `users` (shadow row SSO)
-- [`DATABASE.id.md`](./DATABASE.id.md) §12 — `operation_log` (audit siapa melakukan apa)
+- [`DATABASE.id.md`](./DATABASE.id.md) §10 — tabel `anprc_users` (shadow row SSO)
+- [`DATABASE.id.md`](./DATABASE.id.md) §12 — `anprc_operation_log` (audit siapa melakukan apa)

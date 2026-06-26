@@ -99,7 +99,7 @@ You should see:
 
 Any username works in dev — try `?username=alice` or `?username=operator` to
 exercise different shadow-user records. Each unique username creates a row in
-the local `users` table.
+the local `anprc_users` table.
 
 ### Smoke-test with curl
 
@@ -178,5 +178,5 @@ When the parent platform's DB is reachable from production:
 See also:
 - [`DEPLOYMENT.md`](./DEPLOYMENT.md) — production setup
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) §9 — full API surface
-- [`DATABASE.md`](./DATABASE.md) §10 — `users` table (SSO shadow rows)
-- [`DATABASE.md`](./DATABASE.md) §12 — `operation_log` (audit trail of who did what)
+- [`DATABASE.md`](./DATABASE.md) §10 — `anprc_users` table (SSO shadow rows)
+- [`DATABASE.md`](./DATABASE.md) §12 — `anprc_operation_log` (audit trail of who did what)
