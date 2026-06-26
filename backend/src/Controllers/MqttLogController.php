@@ -23,7 +23,7 @@ class MqttLogController {
         $payload = $b['payload'] ?? null;
         $plate = self::extractPlate($name, $payload);
         Database::query(
-            'INSERT INTO mqtt_inbound_log (device_sn, topic, message_name, license_plate, payload)
+            'INSERT INTO anprc_mqtt_inbound_log (device_sn, topic, message_name, license_plate, payload)
              VALUES (?, ?, ?, ?, ?::jsonb)',
             [$sn, substr($top, 0, 255), substr($name, 0, 64),
              $plate !== null ? substr($plate, 0, 32) : null,
@@ -59,7 +59,7 @@ class MqttLogController {
             "SELECT device_sn,
                     COUNT(*)::int       AS total,
                     MAX(received_at)    AS last_at
-             FROM mqtt_inbound_log
+             FROM anprc_mqtt_inbound_log
              GROUP BY device_sn"
         );
         $outboundRows = Database::fetchAll(
@@ -69,7 +69,7 @@ class MqttLogController {
                     COUNT(*) FILTER (WHERE status='pending')::int AS pending,
                     COUNT(*) FILTER (WHERE status='sent')::int    AS sent,
                     COUNT(*) FILTER (WHERE status='failed')::int  AS failed
-             FROM mqtt_outbound_queue
+             FROM anprc_mqtt_outbound_queue
              GROUP BY device_sn"
         );
 
@@ -111,7 +111,7 @@ class MqttLogController {
         foreach ($byDev as $sn => &$dev) {
             $breakdown = Database::fetchAll(
                 "SELECT message_name, COUNT(*)::int AS c
-                 FROM mqtt_inbound_log
+                 FROM anprc_mqtt_inbound_log
                  WHERE device_sn = ?
                  GROUP BY message_name
                  ORDER BY c DESC LIMIT 6",
@@ -123,7 +123,7 @@ class MqttLogController {
 
         // Resolve channel info (name + channel_no) by anpr_device_sn match
         $channelMap = [];
-        foreach (Database::fetchAll('SELECT channel_no, name, anpr_device_sn FROM channels') as $c) {
+        foreach (Database::fetchAll('SELECT channel_no, name, anpr_device_sn FROM anprc_channels') as $c) {
             if (!empty($c['anpr_device_sn'])) {
                 $channelMap[$c['anpr_device_sn']] = $c;
             }
@@ -166,7 +166,7 @@ class MqttLogController {
         if ($to)    { $where[] = 'received_at <= :t';      $params['t']   = $to; }
 
         $sql = 'SELECT id, device_sn, topic, message_name, license_plate, payload, received_at
-                FROM mqtt_inbound_log';
+                FROM anprc_mqtt_inbound_log';
         if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
         $sql .= ' ORDER BY id DESC LIMIT ' . $limit . ' OFFSET ' . $offset;
         $rows = Database::fetchAll($sql, $params);
@@ -176,7 +176,7 @@ class MqttLogController {
             }
         }
 
-        $totalSql = 'SELECT COUNT(*)::int AS c FROM mqtt_inbound_log';
+        $totalSql = 'SELECT COUNT(*)::int AS c FROM anprc_mqtt_inbound_log';
         if ($where) $totalSql .= ' WHERE ' . implode(' AND ', $where);
         $total = (int)(Database::fetchOne($totalSql, $params)['c'] ?? 0);
 
@@ -222,7 +222,7 @@ class MqttLogController {
 
         $sql = 'SELECT id, device_sn, command_name AS message_name, payload,
                        status, attempts, last_error, created_at, sent_at
-                FROM mqtt_outbound_queue';
+                FROM anprc_mqtt_outbound_queue';
         if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
         $sql .= ' ORDER BY id DESC LIMIT ' . $limit . ' OFFSET ' . $offset;
         $rows = Database::fetchAll($sql, $params);
@@ -232,7 +232,7 @@ class MqttLogController {
             }
         }
 
-        $totalSql = 'SELECT COUNT(*)::int AS c FROM mqtt_outbound_queue';
+        $totalSql = 'SELECT COUNT(*)::int AS c FROM anprc_mqtt_outbound_queue';
         if ($where) $totalSql .= ' WHERE ' . implode(' AND ', $where);
         $total = (int)(Database::fetchOne($totalSql, $params)['c'] ?? 0);
 
@@ -245,8 +245,8 @@ class MqttLogController {
      * Used by the frontend filter dropdown so it stays populated independent of current filter state.
      */
     public function messageNames(Request $req) {
-        $inbound  = Database::fetchAll('SELECT DISTINCT message_name AS n FROM mqtt_inbound_log');
-        $outbound = Database::fetchAll('SELECT DISTINCT command_name AS n FROM mqtt_outbound_queue');
+        $inbound  = Database::fetchAll('SELECT DISTINCT message_name AS n FROM anprc_mqtt_inbound_log');
+        $outbound = Database::fetchAll('SELECT DISTINCT command_name AS n FROM anprc_mqtt_outbound_queue');
         $set = [];
         foreach ($inbound  as $r) $set[$r['n']] = true;
         foreach ($outbound as $r) $set[$r['n']] = true;

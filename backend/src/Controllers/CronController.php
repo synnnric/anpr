@@ -21,14 +21,14 @@ class CronController {
         // unambiguous local time — unlike the naive-UTC strings the rest of the DB
         // holds. (This value is only ever displayed, never compared in SQL.)
         Database::query(
-            "INSERT INTO settings (key_name, value, updated_at) VALUES ('worker_last_seen_at', :v, NOW())
+            "INSERT INTO anprc_settings (key_name, value, updated_at) VALUES ('worker_last_seen_at', :v, NOW())
              ON CONFLICT (key_name) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
             ['v' => date('c')]
         );
 
         // 1) Force a decision on inspections that have exceeded their UVIS timeout
         $timedOut = Database::fetchAll(
-            "SELECT * FROM inspections
+            "SELECT * FROM anprc_inspections
              WHERE decision = 'pending'
                AND decision_timeout_at IS NOT NULL
                AND decision_timeout_at <= ?
@@ -40,7 +40,7 @@ class CronController {
         foreach ($timedOut as $insp) {
             $verdict = DecisionEngine::evaluate($insp);
             if (!$verdict) continue;
-            $channel = Database::fetchOne('SELECT * FROM channels WHERE channel_no = ?', [$insp['channel_no']]);
+            $channel = Database::fetchOne('SELECT * FROM anprc_channels WHERE channel_no = ?', [$insp['channel_no']]);
             if (!$channel) continue;
             DecisionExecutor::apply($insp, $verdict, $channel);
             $resolved[] = [
@@ -55,7 +55,7 @@ class CronController {
         //    (the S300 may have crashed or the reset-complete callback got lost).
         $stuckResetCutoff = gmdate('Y-m-d H:i:s', time() - 30);
         $stuck = Database::fetchAll(
-            "SELECT * FROM inspections
+            "SELECT * FROM anprc_inspections
              WHERE state = 'resetting'
                AND leave_called_at IS NOT NULL
                AND leave_called_at <= ?
@@ -64,7 +64,7 @@ class CronController {
         );
         $forcedComplete = [];
         foreach ($stuck as $insp) {
-            Database::update('inspections', [
+            Database::update('anprc_inspections', [
                 'state' => 'completed',
                 'reset_completed_at' => $now,
             ], 'id = :id', ['id' => $insp['id']]);
@@ -108,18 +108,18 @@ class CronController {
         //    self-close/loop detector, and only if you accept the crush risk.
         $blockerClosed = [];
         $closeMode = (string)(Database::fetchOne(
-            "SELECT value FROM settings WHERE key_name = 'blocker_close_mode'"
+            "SELECT value FROM anprc_settings WHERE key_name = 'blocker_close_mode'"
         )['value'] ?? 'hardware');
 
         if ($closeMode === 'backend_timer') {
             $closeAfter = (int)(Database::fetchOne(
-                "SELECT value FROM settings WHERE key_name = 'blocker_auto_close_sec'"
+                "SELECT value FROM anprc_settings WHERE key_name = 'blocker_auto_close_sec'"
             )['value'] ?? 8);
             $closeCutoff = gmdate('Y-m-d H:i:s', time() - $closeAfter);
             $toClose = Database::fetchAll(
                 "SELECT i.*, c.rb_ip, c.rb_port, c.rb_device_no, c.rb_board_id, c.rb_column_num
-                 FROM inspections i
-                 JOIN channels c ON c.channel_no = i.channel_no
+                 FROM anprc_inspections i
+                 JOIN anprc_channels c ON c.channel_no = i.channel_no
                  WHERE i.blocker_opened = 1
                    AND i.blocker_closed_at IS NULL
                    AND i.blocker_opened_at IS NOT NULL
@@ -137,7 +137,7 @@ class CronController {
                     (string)$insp['rb_board_id'],
                     (int)$insp['rb_column_num']
                 );
-                Database::update('inspections', [
+                Database::update('anprc_inspections', [
                     'blocker_closed_at' => $now,
                 ], 'id = :id', ['id' => $insp['id']]);
                 \App\Services\InspectionService::logOperation([

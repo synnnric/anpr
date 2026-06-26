@@ -7,7 +7,7 @@ use App\Services\InspectionService;
 
 class SettingsController {
     public function index(Request $req) {
-        $rows = Database::fetchAll('SELECT * FROM settings');
+        $rows = Database::fetchAll('SELECT * FROM anprc_settings');
         $map = [];
         foreach ($rows as $r) $map[$r['key_name']] = $r['value'];
         return ['code' => 200, 'message' => 'success', 'data' => $map];
@@ -18,7 +18,7 @@ class SettingsController {
         $actor = AuthController::usernameFromRequest($req);
         foreach ($body as $k => $v) {
             Database::query(
-                "INSERT INTO settings (key_name, value) VALUES (:k, :v)
+                "INSERT INTO anprc_settings (key_name, value) VALUES (:k, :v)
                  ON CONFLICT (key_name) DO UPDATE SET value = EXCLUDED.value",
                 ['k' => $k, 'v' => (string)$v]
             );

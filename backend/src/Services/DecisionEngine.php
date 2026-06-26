@@ -29,7 +29,7 @@ class DecisionEngine {
 
         // Hard equipment failure?
         $failureLog = Database::fetchOne(
-            'SELECT id FROM inspection_status_logs WHERE inspection_id = ? AND operating_state = 5 LIMIT 1',
+            'SELECT id FROM anprc_inspection_status_logs WHERE inspection_id = ? AND operating_state = 5 LIMIT 1',
             [$inspection['id']]
         );
         if ($failureLog) {
@@ -38,13 +38,13 @@ class DecisionEngine {
 
         // Fake plate?
         if ($inspection['vehicle_id']) {
-            $v = Database::fetchOne('SELECT is_fake_plate FROM vehicles WHERE id = ?', [$inspection['vehicle_id']]);
+            $v = Database::fetchOne('SELECT is_fake_plate FROM anprc_vehicles WHERE id = ?', [$inspection['vehicle_id']]);
             if ($v && (int)$v['is_fake_plate'] === 1) {
                 return ['decision' => 'fail', 'reason' => 'Fake plate detected by ANPR'];
             }
         } else {
             $v = Database::fetchOne(
-                'SELECT is_fake_plate FROM vehicles WHERE license_plate = ? ORDER BY id DESC LIMIT 1',
+                'SELECT is_fake_plate FROM anprc_vehicles WHERE license_plate = ? ORDER BY id DESC LIMIT 1',
                 [$inspection['license_plate']]
             );
             if ($v && (int)$v['is_fake_plate'] === 1) {
@@ -54,7 +54,7 @@ class DecisionEngine {
 
         // UVIS result available?
         $uvis = Database::fetchOne(
-            'SELECT image_type, object_count FROM inspection_uvis WHERE inspection_id = ? ORDER BY id DESC LIMIT 1',
+            'SELECT image_type, object_count FROM anprc_inspection_uvis WHERE inspection_id = ? ORDER BY id DESC LIMIT 1',
             [$inspection['id']]
         );
         if ($uvis) {

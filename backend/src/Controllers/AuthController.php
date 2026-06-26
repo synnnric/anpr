@@ -59,14 +59,14 @@ class AuthController {
         }
 
         // Upsert shadow row in local users table so operation_log + /me keep working.
-        $existing = Database::fetchOne('SELECT id FROM users WHERE username = ?', [$username]);
+        $existing = Database::fetchOne('SELECT id FROM anprc_users WHERE username = ?', [$username]);
         if ($existing) {
             $userId = (int)$existing['id'];
-            Database::update('users',
+            Database::update('anprc_users',
                 ['display_name' => $displayName, 'role' => $role, 'enabled' => 1],
                 'id = :uid', ['uid' => $userId]);
         } else {
-            $userId = Database::insert('users', [
+            $userId = Database::insert('anprc_users', [
                 'username' => $username,
                 'display_name' => $displayName,
                 'role' => $role,
@@ -78,7 +78,7 @@ class AuthController {
 
         $token = self::issueToken($userId);
         $user = Database::fetchOne(
-            'SELECT id, username, display_name, role, enabled, created_at FROM users WHERE id = ?',
+            'SELECT id, username, display_name, role, enabled, created_at FROM anprc_users WHERE id = ?',
             [$userId]
         );
         InspectionService::logOperation([
@@ -94,7 +94,7 @@ class AuthController {
     public function me(Request $req) {
         $uid = self::userIdFromToken($req->header('authorization'));
         if (!$uid) { Response::error('Unauthenticated', 401); return null; }
-        $user = Database::fetchOne('SELECT id, username, display_name, role, enabled, created_at FROM users WHERE id = ?', [$uid]);
+        $user = Database::fetchOne('SELECT id, username, display_name, role, enabled, created_at FROM anprc_users WHERE id = ?', [$uid]);
         if (!$user) { Response::error('User not found', 404); return null; }
         return ['code' => 200, 'message' => 'success', 'data' => $user];
     }
@@ -112,7 +112,7 @@ class AuthController {
     public static function usernameFromRequest(Request $req): ?string {
         $uid = self::userIdFromToken($req->header('authorization'));
         if (!$uid) return null;
-        $row = Database::fetchOne('SELECT username FROM users WHERE id = ?', [$uid]);
+        $row = Database::fetchOne('SELECT username FROM anprc_users WHERE id = ?', [$uid]);
         return $row['username'] ?? null;
     }
 

@@ -5,12 +5,12 @@ use App\Core\Database;
 
 class InspectionService {
     public static function findChannel(string $channelNo): ?array {
-        return Database::fetchOne('SELECT * FROM channels WHERE channel_no = ?', [$channelNo]);
+        return Database::fetchOne('SELECT * FROM anprc_channels WHERE channel_no = ?', [$channelNo]);
     }
 
     public static function getOrCreateActiveInspection(string $channelNo, string $licensePlate): array {
         $existing = Database::fetchOne(
-            "SELECT * FROM inspections
+            "SELECT * FROM anprc_inspections
              WHERE channel_no = ? AND state IN ('pending','started','inspecting','resetting')
              ORDER BY id DESC LIMIT 1",
             [$channelNo]
@@ -18,22 +18,22 @@ class InspectionService {
         if ($existing) return $existing;
 
         $vehicle = Database::fetchOne(
-            'SELECT * FROM vehicles WHERE license_plate = ? ORDER BY id DESC LIMIT 1',
+            'SELECT * FROM anprc_vehicles WHERE license_plate = ? ORDER BY id DESC LIMIT 1',
             [$licensePlate]
         );
 
-        $id = Database::insert('inspections', [
+        $id = Database::insert('anprc_inspections', [
             'channel_no' => $channelNo,
             'vehicle_id' => $vehicle['id'] ?? null,
             'license_plate' => $licensePlate,
             'state' => 'pending',
         ]);
-        return Database::fetchOne('SELECT * FROM inspections WHERE id = ?', [$id]);
+        return Database::fetchOne('SELECT * FROM anprc_inspections WHERE id = ?', [$id]);
     }
 
     public static function findActiveInspection(string $channelNo): ?array {
         return Database::fetchOne(
-            "SELECT * FROM inspections
+            "SELECT * FROM anprc_inspections
              WHERE channel_no = ? AND state IN ('pending','started','inspecting','resetting')
              ORDER BY id DESC LIMIT 1",
             [$channelNo]
@@ -42,7 +42,15 @@ class InspectionService {
 
     public static function isVip(string $licensePlate): bool {
         $row = Database::fetchOne(
-            'SELECT id FROM vip_plates WHERE license_plate = ? AND enabled = 1 LIMIT 1',
+            'SELECT id FROM anprc_vip_plates WHERE license_plate = ? AND enabled = 1 LIMIT 1',
+            [trim($licensePlate)]
+        );
+        return $row !== null;
+    }
+
+    public static function isBlacklisted(string $licensePlate): bool {
+        $row = Database::fetchOne(
+            'SELECT id FROM anprc_blacklist_plates WHERE license_plate = ? AND enabled = 1 LIMIT 1',
             [trim($licensePlate)]
         );
         return $row !== null;
@@ -85,7 +93,7 @@ class InspectionService {
     }
 
     public static function logOperation(array $log): int {
-        return Database::insert('operation_log', [
+        return Database::insert('anprc_operation_log', [
             'actor_username' => $log['actor_username'] ?? null,
             'channel_no' => $log['channel_no'] ?? null,
             'inspection_id' => $log['inspection_id'] ?? null,

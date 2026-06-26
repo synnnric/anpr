@@ -6,11 +6,15 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Services\InspectionService;
 
-class VipController {
+/**
+ * CRUD for the ANPR-stage deny list (blacklist_plates). A plate on this list is
+ * refused entry at /come — see S300Controller::come.
+ */
+class BlacklistController {
     public function index(Request $req) {
         return [
             'code' => 200, 'message' => 'success',
-            'data' => Database::fetchAll('SELECT * FROM anprc_vip_plates ORDER BY id DESC'),
+            'data' => Database::fetchAll('SELECT * FROM anprc_blacklist_plates ORDER BY id DESC'),
         ];
     }
 
@@ -20,32 +24,32 @@ class VipController {
         $plate = trim((string)($body['license_plate'] ?? ''));
         if ($plate === '') {
             InspectionService::logOperation([
-                'actor_username' => $actor, 'action' => 'vip.create',
+                'actor_username' => $actor, 'action' => 'blacklist.create',
                 'request_payload' => $body, 'status' => 'failed',
                 'error_message' => 'license_plate required',
             ]);
             Response::error('license_plate required', 400);
             return null;
         }
-        $existing = Database::fetchOne('SELECT id FROM anprc_vip_plates WHERE license_plate = ?', [$plate]);
+        $existing = Database::fetchOne('SELECT id FROM anprc_blacklist_plates WHERE license_plate = ?', [$plate]);
         if ($existing) {
             InspectionService::logOperation([
-                'actor_username' => $actor, 'action' => 'vip.create',
+                'actor_username' => $actor, 'action' => 'blacklist.create',
                 'request_payload' => $body, 'status' => 'failed',
-                'error_message' => "VIP plate '$plate' already exists",
+                'error_message' => "Blacklist plate '$plate' already exists",
             ]);
-            Response::error("VIP plate '$plate' already exists", 409);
+            Response::error("Blacklist plate '$plate' already exists", 409);
             return null;
         }
-        $id = Database::insert('anprc_vip_plates', [
+        $id = Database::insert('anprc_blacklist_plates', [
             'license_plate' => $plate,
             'description' => $body['description'] ?? null,
             'enabled' => isset($body['enabled']) ? (int)(bool)$body['enabled'] : 1,
         ]);
-        $row = Database::fetchOne('SELECT * FROM anprc_vip_plates WHERE id = ?', [$id]);
+        $row = Database::fetchOne('SELECT * FROM anprc_blacklist_plates WHERE id = ?', [$id]);
         InspectionService::logOperation([
             'actor_username' => $actor,
-            'action' => 'vip.create',
+            'action' => 'blacklist.create',
             'request_payload' => $body,
             'response_payload' => $row,
             'status' => 'success',
@@ -56,24 +60,24 @@ class VipController {
     public function update(Request $req) {
         $id = (int)$req->param('id');
         $actor = AuthController::usernameFromRequest($req);
-        $row = Database::fetchOne('SELECT * FROM anprc_vip_plates WHERE id = ?', [$id]);
+        $row = Database::fetchOne('SELECT * FROM anprc_blacklist_plates WHERE id = ?', [$id]);
         if (!$row) {
             InspectionService::logOperation([
-                'actor_username' => $actor, 'action' => 'vip.update',
+                'actor_username' => $actor, 'action' => 'blacklist.update',
                 'request_payload' => ['id' => $id], 'status' => 'failed',
-                'error_message' => "VIP plate #$id not found",
+                'error_message' => "Blacklist plate #$id not found",
             ]);
-            Response::notFound('VIP plate not found'); return null;
+            Response::notFound('Blacklist plate not found'); return null;
         }
         $body = $req->json();
         $upd = [];
         if (array_key_exists('description', $body)) $upd['description'] = $body['description'];
         if (array_key_exists('enabled', $body))     $upd['enabled'] = (int)(bool)$body['enabled'];
-        if ($upd) Database::update('anprc_vip_plates', $upd, 'id = :id', ['id' => $id]);
-        $fresh = Database::fetchOne('SELECT * FROM anprc_vip_plates WHERE id = ?', [$id]);
+        if ($upd) Database::update('anprc_blacklist_plates', $upd, 'id = :id', ['id' => $id]);
+        $fresh = Database::fetchOne('SELECT * FROM anprc_blacklist_plates WHERE id = ?', [$id]);
         InspectionService::logOperation([
             'actor_username' => $actor,
-            'action' => 'vip.update',
+            'action' => 'blacklist.update',
             'request_payload' => ['id' => $id, 'plate' => $row['license_plate'], 'changes' => $upd],
             'response_payload' => $fresh,
             'status' => 'success',
@@ -84,21 +88,21 @@ class VipController {
     public function destroy(Request $req) {
         $id = (int)$req->param('id');
         $actor = AuthController::usernameFromRequest($req);
-        $existing = Database::fetchOne('SELECT license_plate FROM anprc_vip_plates WHERE id = ?', [$id]);
-        Database::query('DELETE FROM anprc_vip_plates WHERE id = ?', [$id]);
+        $existing = Database::fetchOne('SELECT license_plate FROM anprc_blacklist_plates WHERE id = ?', [$id]);
+        Database::query('DELETE FROM anprc_blacklist_plates WHERE id = ?', [$id]);
         InspectionService::logOperation([
             'actor_username' => $actor,
-            'action' => 'vip.delete',
+            'action' => 'blacklist.delete',
             'request_payload' => ['id' => $id, 'plate' => $existing['license_plate'] ?? null],
             'status' => 'success',
         ]);
         return ['code' => 200, 'message' => 'deleted', 'data' => null];
     }
 
-    // GET /api/vip/check/{plate}
+    // GET /api/blacklist/check/{plate}
     public function check(Request $req) {
         $plate = trim((string)$req->param('plate'));
-        $isVip = \App\Services\InspectionService::isVip($plate);
-        return ['code' => 200, 'message' => 'success', 'data' => ['plate' => $plate, 'vip' => $isVip]];
+        $isBlacklisted = InspectionService::isBlacklisted($plate);
+        return ['code' => 200, 'message' => 'success', 'data' => ['plate' => $plate, 'blacklisted' => $isBlacklisted]];
     }
 }

@@ -20,13 +20,13 @@ class InspectionController {
         if ($channelNo) { $where[] = 'channel_no = :ch'; $params['ch'] = $channelNo; }
         if ($plate)     { $where[] = 'license_plate ILIKE :pl'; $params['pl'] = "%$plate%"; }
 
-        $sql = 'SELECT * FROM inspections';
+        $sql = 'SELECT * FROM anprc_inspections';
         if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
         $sql .= ' ORDER BY id DESC LIMIT ' . $limit . ' OFFSET ' . $offset;
 
         $rows = Database::fetchAll($sql, $params);
         $total = Database::fetchOne(
-            'SELECT COUNT(*) as c FROM inspections' . ($where ? ' WHERE ' . implode(' AND ', $where) : ''),
+            'SELECT COUNT(*) as c FROM anprc_inspections' . ($where ? ' WHERE ' . implode(' AND ', $where) : ''),
             $params
         )['c'] ?? 0;
 
@@ -35,30 +35,30 @@ class InspectionController {
 
     public function show(Request $req) {
         $id = (int)$req->param('id');
-        $row = Database::fetchOne('SELECT * FROM inspections WHERE id = ?', [$id]);
+        $row = Database::fetchOne('SELECT * FROM anprc_inspections WHERE id = ?', [$id]);
         if (!$row) { Response::notFound('Inspection not found'); return null; }
 
         $row['status_logs'] = Database::fetchAll(
-            'SELECT id, operating_state, cmd_no, received_at FROM inspection_status_logs WHERE inspection_id = ? ORDER BY id ASC',
+            'SELECT id, operating_state, cmd_no, received_at FROM anprc_inspection_status_logs WHERE inspection_id = ? ORDER BY id ASC',
             [$id]
         );
         $row['face_images'] = Database::fetchAll(
-            'SELECT id, image_url, received_at FROM inspection_face_images WHERE inspection_id = ? ORDER BY id ASC',
+            'SELECT id, image_url, received_at FROM anprc_inspection_face_images WHERE inspection_id = ? ORDER BY id ASC',
             [$id]
         );
         $row['video_streams'] = Database::fetchAll(
-            'SELECT id, camera_code, stream_url, received_at FROM inspection_video_streams WHERE inspection_id = ? ORDER BY id ASC',
+            'SELECT id, camera_code, stream_url, received_at FROM anprc_inspection_video_streams WHERE inspection_id = ? ORDER BY id ASC',
             [$id]
         );
 
         $uvis = Database::fetchAll(
-            'SELECT * FROM inspection_uvis WHERE inspection_id = ? ORDER BY id ASC',
+            'SELECT * FROM anprc_inspection_uvis WHERE inspection_id = ? ORDER BY id ASC',
             [$id]
         );
         foreach ($uvis as &$u) {
             $u['image_url'] = ImageStorage::publicUrl($u['image_path']);
             $u['coords'] = Database::fetchAll(
-                'SELECT confidence, x1, y1, x2, y2 FROM inspection_uvis_coords WHERE uvis_id = ?',
+                'SELECT confidence, x1, y1, x2, y2 FROM anprc_inspection_uvis_coords WHERE uvis_id = ?',
                 [$u['id']]
             );
         }
@@ -67,7 +67,7 @@ class InspectionController {
 
         $ops = Database::fetchAll(
             'SELECT id, action, status, error_message, actor_username, request_payload, response_payload, created_at
-             FROM operation_log WHERE inspection_id = ? ORDER BY id ASC',
+             FROM anprc_operation_log WHERE inspection_id = ? ORDER BY id ASC',
             [$id]
         );
         foreach ($ops as &$o) {
@@ -80,11 +80,11 @@ class InspectionController {
         // Vehicle snapshot images (from ivs_result) — link via the inspection's
         // vehicle_id, falling back to the latest detection for this plate.
         $veh = $row['vehicle_id']
-            ? Database::fetchOne('SELECT full_image_path, small_image_path FROM vehicles WHERE id = ?', [$row['vehicle_id']])
+            ? Database::fetchOne('SELECT full_image_path, small_image_path FROM anprc_vehicles WHERE id = ?', [$row['vehicle_id']])
             : null;
         if (!$veh) {
             $veh = Database::fetchOne(
-                'SELECT full_image_path, small_image_path FROM vehicles WHERE license_plate = ? ORDER BY id DESC LIMIT 1',
+                'SELECT full_image_path, small_image_path FROM anprc_vehicles WHERE license_plate = ? ORDER BY id DESC LIMIT 1',
                 [$row['license_plate']]
             );
         }
@@ -107,7 +107,7 @@ class InspectionController {
         $actor = AuthController::usernameFromRequest($req);
         if (!$actor) { Response::error('authentication required', 401); return null; }
 
-        $insp = Database::fetchOne('SELECT * FROM inspections WHERE id = ?', [$id]);
+        $insp = Database::fetchOne('SELECT * FROM anprc_inspections WHERE id = ?', [$id]);
         if (!$insp) { Response::notFound('Inspection not found'); return null; }
 
         if ($insp['decision'] !== 'suspect' || ($insp['review_status'] ?? null) !== 'pending') {
@@ -115,13 +115,13 @@ class InspectionController {
             return null;
         }
 
-        $channel = Database::fetchOne('SELECT * FROM channels WHERE channel_no = ?', [$insp['channel_no']]);
+        $channel = Database::fetchOne('SELECT * FROM anprc_channels WHERE channel_no = ?', [$insp['channel_no']]);
         if (!$channel) { Response::error('channel not found for inspection', 422); return null; }
 
         $note = $req->json()['note'] ?? null;
         DecisionExecutor::resolveReview($insp, $channel, $approved, $actor, $note !== null ? (string)$note : null);
 
-        $fresh = Database::fetchOne('SELECT * FROM inspections WHERE id = ?', [$id]);
+        $fresh = Database::fetchOne('SELECT * FROM anprc_inspections WHERE id = ?', [$id]);
         return ['code' => 200, 'message' => 'success', 'data' => $fresh];
     }
 }

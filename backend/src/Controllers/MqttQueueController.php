@@ -15,7 +15,7 @@ class MqttQueueController {
         $limit = max(1, min(100, (int)$req->input('limit', 20)));
         $rows = Database::fetchAll(
             "SELECT id, device_sn, command_name, payload, attempts, created_at
-             FROM mqtt_outbound_queue
+             FROM anprc_mqtt_outbound_queue
              WHERE status = 'pending'
              ORDER BY id ASC LIMIT $limit"
         );
@@ -30,10 +30,10 @@ class MqttQueueController {
      */
     public function sent(Request $req) {
         $id = (int)$req->param('id');
-        Database::update('mqtt_outbound_queue', [
+        Database::update('anprc_mqtt_outbound_queue', [
             'status' => 'sent',
             'sent_at' => gmdate('Y-m-d H:i:s'),
-            'attempts' => (int)Database::fetchOne('SELECT attempts FROM mqtt_outbound_queue WHERE id = ?', [$id])['attempts'] + 1,
+            'attempts' => (int)Database::fetchOne('SELECT attempts FROM anprc_mqtt_outbound_queue WHERE id = ?', [$id])['attempts'] + 1,
         ], 'id = :id', ['id' => $id]);
         return ['code' => 200, 'message' => 'ok', 'data' => null];
     }
@@ -45,11 +45,11 @@ class MqttQueueController {
     public function failed(Request $req) {
         $id = (int)$req->param('id');
         $body = $req->json();
-        $row = Database::fetchOne('SELECT * FROM mqtt_outbound_queue WHERE id = ?', [$id]);
+        $row = Database::fetchOne('SELECT * FROM anprc_mqtt_outbound_queue WHERE id = ?', [$id]);
         if (!$row) { Response::notFound(); return null; }
         $attempts = (int)$row['attempts'] + 1;
         $giveUp = !empty($body['giveUp']) || $attempts >= 5;
-        Database::update('mqtt_outbound_queue', [
+        Database::update('anprc_mqtt_outbound_queue', [
             'status' => $giveUp ? 'failed' : 'pending',
             'attempts' => $attempts,
             'last_error' => substr((string)($body['error'] ?? 'unknown'), 0, 500),

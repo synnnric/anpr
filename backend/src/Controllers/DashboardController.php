@@ -58,14 +58,14 @@ class DashboardController {
 
         // --- Worker — heartbeat written by /api/cron/tick into settings ---
         $hb = Database::fetchOne(
-            "SELECT value, updated_at FROM settings WHERE key_name = 'worker_last_seen_at'"
+            "SELECT value, updated_at FROM anprc_settings WHERE key_name = 'worker_last_seen_at'"
         );
         $workerLastAt = $hb['value'] ?? null;
         $workerDt = self::parsePgUtc($workerLastAt);
         $workerAge = $workerDt ? max(0, $nowEpoch - $workerDt->getTimestamp()) : null;
 
         // --- MQTT data flow (separate from "is the broker reachable") ---
-        $row = Database::fetchOne("SELECT MAX(received_at) AS last_at FROM mqtt_inbound_log");
+        $row = Database::fetchOne("SELECT MAX(received_at) AS last_at FROM anprc_mqtt_inbound_log");
         $lastInboundAt = $row['last_at'] ?? null;
         $inboundDt = self::parsePgUtc($lastInboundAt);
         $lastInboundSec = $inboundDt ? max(0, $nowEpoch - $inboundDt->getTimestamp()) : null;
@@ -93,7 +93,7 @@ class DashboardController {
     // ------------------------------------------------------------------ channels
 
     private function channels(int $nowEpoch, string $startUtc, string $endUtc): array {
-        $channels = Database::fetchAll('SELECT * FROM channels ORDER BY id');
+        $channels = Database::fetchAll('SELECT * FROM anprc_channels ORDER BY id');
         $out = [];
         foreach ($channels as $c) {
             $row = [
@@ -119,13 +119,13 @@ class DashboardController {
             if ($c['anpr_device_sn']) {
                 $hb = Database::fetchOne(
                     "SELECT MAX(received_at) AS last_at
-                     FROM mqtt_inbound_log
+                     FROM anprc_mqtt_inbound_log
                      WHERE device_sn = :sn AND message_name = 'keep_alive'",
                     ['sn' => $c['anpr_device_sn']]
                 );
                 $totals = Database::fetchOne(
                     "SELECT COUNT(*) FILTER (WHERE received_at >= :s AND received_at < :e)::int AS msgs_today
-                     FROM mqtt_inbound_log WHERE device_sn = :sn",
+                     FROM anprc_mqtt_inbound_log WHERE device_sn = :sn",
                     ['sn' => $c['anpr_device_sn'], 's' => $startUtc, 'e' => $endUtc]
                 );
                 $lastAt = $hb['last_at'] ?? null;
@@ -141,7 +141,7 @@ class DashboardController {
             // Most recent plate detected by this device today.
             if ($c['anpr_device_sn']) {
                 $last = Database::fetchOne(
-                    "SELECT license_plate, received_at FROM mqtt_inbound_log
+                    "SELECT license_plate, received_at FROM anprc_mqtt_inbound_log
                      WHERE device_sn = :sn AND license_plate IS NOT NULL
                      ORDER BY id DESC LIMIT 1",
                     ['sn' => $c['anpr_device_sn']]
@@ -155,7 +155,7 @@ class DashboardController {
                 $active = Database::fetchOne(
                     "SELECT id, license_plate, state, decision, current_operating_state,
                             come_called_at, decision_at, decision_timeout_at
-                     FROM inspections
+                     FROM anprc_inspections
                      WHERE channel_no = :ch AND state IN ('pending','started','inspecting','resetting')
                      ORDER BY id DESC LIMIT 1",
                     ['ch' => $c['channel_no']]
@@ -246,7 +246,7 @@ class DashboardController {
                 COUNT(*) FILTER (WHERE status = 'completed' AND exit_at >= :s AND exit_at < :e)::int      AS completed,
                 COUNT(*) FILTER (WHERE status = 'orphan_exit' AND exit_at >= :s AND exit_at < :e)::int   AS orphan_exits,
                 COUNT(*) FILTER (WHERE status = 'denied_entry' AND updated_at >= :s AND updated_at < :e)::int AS denied_entries
-             FROM visits", $params
+             FROM anprc_visits", $params
         ) ?: [];
 
         $insp = Database::fetchOne(
@@ -257,11 +257,11 @@ class DashboardController {
                 COUNT(*) FILTER (WHERE decision = 'fail')::int                               AS fail,
                 COUNT(*) FILTER (WHERE decision = 'vip_pass')::int                           AS vip_pass,
                 COUNT(*) FILTER (WHERE state IN ('pending','started','inspecting','resetting'))::int AS in_progress
-             FROM inspections WHERE created_at >= :s AND created_at < :e", $params
+             FROM anprc_inspections WHERE created_at >= :s AND created_at < :e", $params
         ) ?: [];
 
         $plates = Database::fetchOne(
-            "SELECT COUNT(*)::int AS c FROM mqtt_inbound_log
+            "SELECT COUNT(*)::int AS c FROM anprc_mqtt_inbound_log
              WHERE message_name = 'ivs_result'
                AND received_at >= :s AND received_at < :e", $params
         );
@@ -282,7 +282,7 @@ class DashboardController {
                 COUNT(*) FILTER (WHERE status = 'sent')::int    AS sent,
                 COUNT(*) FILTER (WHERE status = 'failed')::int  AS failed,
                 MAX(CASE WHEN status = 'failed' THEN last_error END) AS last_error
-             FROM mqtt_outbound_queue"
+             FROM anprc_mqtt_outbound_queue"
         );
         return [
             'pending'   => (int)($row['pending'] ?? 0),
@@ -295,7 +295,7 @@ class DashboardController {
     private function recentPlates(int $n): array {
         return Database::fetchAll(
             "SELECT id, device_sn, license_plate, received_at
-             FROM mqtt_inbound_log
+             FROM anprc_mqtt_inbound_log
              WHERE license_plate IS NOT NULL
              ORDER BY id DESC LIMIT $n"
         );
@@ -305,7 +305,7 @@ class DashboardController {
         return Database::fetchAll(
             "SELECT id, channel_no, license_plate, state, decision, decision_reason,
                     blocker_opened, come_called_at, decision_at
-             FROM inspections
+             FROM anprc_inspections
              ORDER BY id DESC LIMIT $n"
         );
     }

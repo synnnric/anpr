@@ -23,12 +23,12 @@ class VisitsController {
         if ($from)   { $where[] = 'COALESCE(entry_at, exit_at) >= :f'; $params['f'] = $from; }
         if ($to)     { $where[] = 'COALESCE(entry_at, exit_at) <= :t'; $params['t'] = $to; }
 
-        $sql = 'SELECT * FROM visits';
+        $sql = 'SELECT * FROM anprc_visits';
         if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
         $sql .= ' ORDER BY id DESC LIMIT ' . $limit . ' OFFSET ' . $offset;
         $rows = Database::fetchAll($sql, $params);
 
-        $totalSql = 'SELECT COUNT(*) AS c FROM visits';
+        $totalSql = 'SELECT COUNT(*) AS c FROM anprc_visits';
         if ($where) $totalSql .= ' WHERE ' . implode(' AND ', $where);
         $total = (int)(Database::fetchOne($totalSql, $params)['c'] ?? 0);
 
@@ -45,7 +45,7 @@ class VisitsController {
                 COUNT(*) FILTER (WHERE DATE(entry_at) = :d2) AS entered_today,
                 COUNT(*) FILTER (WHERE status = 'orphan_exit' AND DATE(exit_at) = :d3) AS orphan_exits_today,
                 COUNT(*) FILTER (WHERE status = 'denied_entry' AND DATE(entry_at) = :d4) AS denied_entries_today
-             FROM visits",
+             FROM anprc_visits",
             ['d1' => $today, 'd2' => $today, 'd3' => $today, 'd4' => $today]
         );
         return ['code' => 200, 'message' => 'success', 'data' => array_map('intval', $row ?: [])];
@@ -70,7 +70,7 @@ class VisitsController {
             VisitService::closeVisit((int)$visit['id'], $exitCh);
 
             // Remove from exit camera whitelist (one-time pass cleanup)
-            $exitChannel = Database::fetchOne('SELECT * FROM channels WHERE channel_no = ?', [$exitCh]);
+            $exitChannel = Database::fetchOne('SELECT * FROM anprc_channels WHERE channel_no = ?', [$exitCh]);
             if ($exitChannel && !empty($exitChannel['anpr_device_sn'])) {
                 MqttOutbound::whitelistDelete($exitChannel['anpr_device_sn'], $plate);
             }

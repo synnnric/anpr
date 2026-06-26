@@ -20,18 +20,18 @@ class AdminController {
 
     /** Transactional / report tables that get wiped. Order is irrelevant — CASCADE handles refs. */
     private const RESET_TABLES = [
-        'mqtt_inbound_log',
-        'mqtt_outbound_queue',
-        'inbound_events_raw',
-        'inspection_uvis_coords',
-        'inspection_uvis',
-        'inspection_video_streams',
-        'inspection_face_images',
-        'inspection_status_logs',
-        'inspections',
-        'visits',
-        'vehicles',
-        'operation_log',
+        'anprc_mqtt_inbound_log',
+        'anprc_mqtt_outbound_queue',
+        'anprc_inbound_events_raw',
+        'anprc_inspection_uvis_coords',
+        'anprc_inspection_uvis',
+        'anprc_inspection_video_streams',
+        'anprc_inspection_face_images',
+        'anprc_inspection_status_logs',
+        'anprc_inspections',
+        'anprc_visits',
+        'anprc_vehicles',
+        'anprc_operation_log',
     ];
 
     public function resetData(Request $req) {
@@ -70,7 +70,7 @@ class AdminController {
             'data' => [
                 'cleared' => $counts,
                 'total' => array_sum($counts),
-                'preserved' => ['channels', 'vip_plates', 'settings', 'users', 'audio_prompts'],
+                'preserved' => ['anprc_channels', 'anprc_vip_plates', 'anprc_settings', 'anprc_users', 'anprc_audio_prompts'],
             ],
         ];
     }

@@ -20,6 +20,7 @@ use App\Controllers\OperationLogController;
 use App\Controllers\AuthController;
 use App\Controllers\EventStreamController;
 use App\Controllers\VipController;
+use App\Controllers\BlacklistController;
 use App\Controllers\CronController;
 use App\Controllers\VisitsController;
 use App\Controllers\MqttQueueController;
@@ -87,6 +88,14 @@ $router->post  ('/api/vip',              fn($r) => $vip->create($r));
 $router->put   ('/api/vip/{id}',         fn($r) => $vip->update($r));
 $router->delete('/api/vip/{id}',         fn($r) => $vip->destroy($r));
 $router->get   ('/api/vip/check/{plate}', fn($r) => $vip->check($r));
+
+// === Blacklist plates CRUD (ANPR-stage deny list) ===
+$bl = new BlacklistController();
+$router->get   ('/api/blacklist',               fn($r) => $bl->index($r));
+$router->post  ('/api/blacklist',               fn($r) => $bl->create($r));
+$router->put   ('/api/blacklist/{id}',          fn($r) => $bl->update($r));
+$router->delete('/api/blacklist/{id}',          fn($r) => $bl->destroy($r));
+$router->get   ('/api/blacklist/check/{plate}', fn($r) => $bl->check($r));
 
 // === Cron / timeout sweep ===
 $cron = new CronController();

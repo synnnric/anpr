@@ -28,7 +28,7 @@ class DecisionExecutor {
         $decision = $verdict['decision'];
         $reason = $verdict['reason'];
 
-        Database::update('inspections', [
+        Database::update('anprc_inspections', [
             'decision' => $decision,
             'decision_reason' => $reason,
             'decision_at' => gmdate('Y-m-d H:i:s'),
@@ -55,7 +55,7 @@ class DecisionExecutor {
         // blocker, no /leave) until an operator approves or rejects it via
         // resolveReview(). This is the deliberate human-in-the-loop gate.
         if ($decision === 'suspect') {
-            Database::update('inspections',
+            Database::update('anprc_inspections',
                 ['review_status' => 'pending'],
                 'id = :id', ['id' => $inspection['id']]
             );
@@ -112,7 +112,7 @@ class DecisionExecutor {
         }
 
         $status = $approved ? 'approved' : 'rejected';
-        Database::update('inspections', [
+        Database::update('anprc_inspections', [
             'review_status' => $status,
             'reviewed_by' => $actor,
             'reviewed_at' => gmdate('Y-m-d H:i:s'),
@@ -180,7 +180,7 @@ class DecisionExecutor {
 
     private static function markVisitDenied(array $inspection, string $reason): void {
         $visit = Database::fetchOne(
-            'SELECT * FROM visits WHERE entry_inspection_id = ? LIMIT 1',
+            'SELECT * FROM anprc_visits WHERE entry_inspection_id = ? LIMIT 1',
             [$inspection['id']]
         );
         if ($visit && $visit['status'] === 'active') {
@@ -227,18 +227,88 @@ class DecisionExecutor {
             ],
             'status' => 'success',
         ]);
+
+        // Vendor parity: on gate-open, also switch the lane signal light green
+        // (serial_data SET_RELAY_STATUS). Tunable via settings:
+        //   entry_green_light_enabled '1' to send (default '1')
+        //   entry_green_light_ch      relay channel (default '1')
+        //   entry_green_light_sec     on-time seconds (default '10')
+        if ($cfg['green_enabled']) {
+            $gqId = MqttOutbound::greenLight($sn, $cfg['green_ch'], $cfg['green_sec']);
+            InspectionService::logOperation([
+                'channel_no' => $inspection['channel_no'],
+                'inspection_id' => $inspection['id'],
+                'action' => 'entry_green_light',
+                'request_payload' => [
+                    'cameraSn' => $sn, 'ch' => $cfg['green_ch'],
+                    'sec' => $cfg['green_sec'], 'queueId' => $gqId,
+                ],
+                'status' => 'success',
+            ]);
+        }
+    }
+
+    /**
+     * Replicate the vendor CP's on-recognition feedback: greet the driver by
+     * voice and show the plate on the camera's LED display. Sent as MQTT
+     * `serial_data` frames to the ANPR camera's KF control card (see
+     * KfControlCard), alongside the entry-gate pulse. Independent of the gate
+     * enable flag so the camera still greets even when the gate is left closed.
+     * Tunable via settings:
+     *   entry_voice_enabled  '1' to play voice    (default '1')
+     *   entry_voice_text     spoken text          (default 'Welcome')
+     *   entry_led_enabled    '1' to show LED text (default '1')
+     *   entry_led_text       LED text; '' = show the plate number; otherwise a
+     *                        literal that may contain a {plate} placeholder (default '')
+     */
+    public static function announceRecognition(array $channel, string $plate, ?int $inspectionId, int $channelNo): void {
+        $sn = $channel['anpr_device_sn'] ?? null;
+        if (!$sn) return;
+
+        $get = static function (string $key, string $default): string {
+            $row = Database::fetchOne('SELECT value FROM anprc_settings WHERE key_name = ?', [$key]);
+            return $row['value'] ?? $default;
+        };
+        $on = static fn(string $v) => in_array($v, ['1', 'true', 'True'], true);
+
+        if ($on($get('entry_voice_enabled', '1'))) {
+            $text = $get('entry_voice_text', 'Welcome');
+            $queueId = MqttOutbound::playVoice($sn, $text);
+            InspectionService::logOperation([
+                'channel_no' => $channelNo, 'inspection_id' => $inspectionId,
+                'action' => 'entry_voice',
+                'request_payload' => ['cameraSn' => $sn, 'text' => $text, 'queueId' => $queueId],
+                'status' => 'success',
+            ]);
+        }
+
+        if ($on($get('entry_led_enabled', '1'))) {
+            $tpl = $get('entry_led_text', '');
+            $text = $tpl === '' ? $plate : str_replace('{plate}', $plate, $tpl);
+            $queueId = MqttOutbound::ledText($sn, $text);
+            InspectionService::logOperation([
+                'channel_no' => $channelNo, 'inspection_id' => $inspectionId,
+                'action' => 'entry_led',
+                'request_payload' => ['cameraSn' => $sn, 'text' => $text, 'queueId' => $queueId],
+                'status' => 'success',
+            ]);
+        }
     }
 
     private static function entryGateConfig(): array {
         $get = function (string $key, string $default): string {
-            $row = Database::fetchOne('SELECT value FROM settings WHERE key_name = ?', [$key]);
+            $row = Database::fetchOne('SELECT value FROM anprc_settings WHERE key_name = ?', [$key]);
             return $row['value'] ?? $default;
         };
+        $on = static fn(string $v) => in_array($v, ['1', 'true', 'True'], true);
         return [
-            'enabled'  => in_array((string)$get('entry_gate_open', '0'), ['1', 'true', 'True'], true),
-            'io'       => (int)$get('entry_gate_io', '0'),
-            'value'    => (int)$get('entry_gate_value', '2'),
-            'delay_ms' => (int)$get('entry_gate_pulse_ms', '1000'),
+            'enabled'       => $on($get('entry_gate_open', '0')),
+            'io'            => (int)$get('entry_gate_io', '0'),
+            'value'         => (int)$get('entry_gate_value', '2'),
+            'delay_ms'      => (int)$get('entry_gate_pulse_ms', '1000'),
+            'green_enabled' => $on($get('entry_green_light_enabled', '1')),
+            'green_ch'      => (int)$get('entry_green_light_ch', '1'),
+            'green_sec'     => (int)$get('entry_green_light_sec', '10'),
         ];
     }
 
@@ -279,7 +349,7 @@ class DecisionExecutor {
         ]);
 
         if ($result['ok']) {
-            Database::update('inspections', [
+            Database::update('anprc_inspections', [
                 'blocker_opened' => 1,
                 'blocker_opened_at' => gmdate('Y-m-d H:i:s'),
             ], 'id = :id', ['id' => $inspection['id']]);
@@ -340,13 +410,13 @@ class DecisionExecutor {
         ]);
 
         if ($result['ok']) {
-            Database::update('inspections', [
+            Database::update('anprc_inspections', [
                 'auto_leave_called' => 1,
                 'leave_called_at' => gmdate('Y-m-d H:i:s'),
             ], 'id = :id', ['id' => $inspection['id']]);
             // Only flip state if not already further along
             Database::query(
-                "UPDATE inspections SET state = 'resetting'
+                "UPDATE anprc_inspections SET state = 'resetting'
                  WHERE id = ? AND state IN ('pending','started','inspecting')",
                 [$inspection['id']]
             );

@@ -14,13 +14,13 @@ class VehicleController {
         $where = []; $params = [];
         if ($plate) { $where[] = 'license_plate ILIKE :pl'; $params['pl'] = "%$plate%"; }
 
-        $sql = 'SELECT * FROM vehicles';
+        $sql = 'SELECT * FROM anprc_vehicles';
         if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
         $sql .= ' ORDER BY id DESC LIMIT ' . $limit . ' OFFSET ' . $offset;
 
         $rows = Database::fetchAll($sql, $params);
         $total = Database::fetchOne(
-            'SELECT COUNT(*) as c FROM vehicles' . ($where ? ' WHERE ' . implode(' AND ', $where) : ''),
+            'SELECT COUNT(*) as c FROM anprc_vehicles' . ($where ? ' WHERE ' . implode(' AND ', $where) : ''),
             $params
         )['c'] ?? 0;
         return ['code' => 200, 'message' => 'success', 'data' => ['items' => $rows, 'total' => (int)$total]];
@@ -41,7 +41,7 @@ class VehicleController {
             ? ImageStorage::saveBase64('vehicles', $body['small_image_b64'])
             : ($body['small_image_path'] ?? null);
 
-        $id = Database::insert('vehicles', [
+        $id = Database::insert('anprc_vehicles', [
             'license_plate' => $body['license_plate'],
             'plate_type' => $body['plate_type'] ?? null,
             'plate_color' => $body['plate_color'] ?? null,

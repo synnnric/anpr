@@ -13,7 +13,7 @@ use App\Services\DecisionExecutor;
 class InboundController {
 
     private static function saveRaw(string $endpoint, Request $req, ?array $body): void {
-        Database::insert('inbound_events_raw', [
+        Database::insert('anprc_inbound_events_raw', [
             'endpoint' => $endpoint,
             'cmd_no' => $body['cmdNo'] ?? null,
             'channel_no' => $body['channelNo'] ?? ($body['channel'] ?? null),
@@ -42,7 +42,7 @@ class InboundController {
         $inspection = InspectionService::findActiveInspection($channelNo);
         $inspectionId = $inspection['id'] ?? null;
 
-        Database::insert('inspection_status_logs', [
+        Database::insert('anprc_inspection_status_logs', [
             'inspection_id' => $inspectionId,
             'channel_no' => $channelNo,
             'operating_state' => $opState,
@@ -81,7 +81,7 @@ class InboundController {
                 // do NOT change state here — that's the job of /come, /leave
                 // and the reset-complete callback.
             }
-            Database::update('inspections', $update, 'id = :id', ['id' => $inspectionId]);
+            Database::update('anprc_inspections', $update, 'id = :id', ['id' => $inspectionId]);
         }
 
         InspectionService::pushEvent('work-status', [
@@ -92,10 +92,10 @@ class InboundController {
 
         // If S300 reports equipment failure, decide immediately
         if ((int)$opState === 5 && $inspection) {
-            $fresh = Database::fetchOne('SELECT * FROM inspections WHERE id = ?', [$inspection['id']]);
+            $fresh = Database::fetchOne('SELECT * FROM anprc_inspections WHERE id = ?', [$inspection['id']]);
             $verdict = DecisionEngine::evaluate($fresh);
             if ($verdict) {
-                $channel = Database::fetchOne('SELECT * FROM channels WHERE channel_no = ?', [$channelNo]);
+                $channel = Database::fetchOne('SELECT * FROM anprc_channels WHERE channel_no = ?', [$channelNo]);
                 if ($channel) DecisionExecutor::apply($fresh, $verdict, $channel);
             }
         }
@@ -119,7 +119,7 @@ class InboundController {
 
         $saved = [];
         foreach ($imgs as $url) {
-            $id = Database::insert('inspection_face_images', [
+            $id = Database::insert('anprc_inspection_face_images', [
                 'inspection_id' => $inspectionId,
                 'channel_no' => $channelNo,
                 'image_url' => $url,
@@ -153,7 +153,7 @@ class InboundController {
         $saved = [];
         foreach ($streams as $s) {
             if (empty($s['code']) || empty($s['url'])) continue;
-            $id = Database::insert('inspection_video_streams', [
+            $id = Database::insert('anprc_inspection_video_streams', [
                 'inspection_id' => $inspectionId,
                 'channel_no' => $channelNo,
                 'camera_code' => $s['code'],
@@ -185,7 +185,7 @@ class InboundController {
         // Using "most recent" would mis-target a fresh /come that happened to
         // sneak in between this callback and the previous vehicle's lifecycle.
         $inspection = Database::fetchOne(
-            "SELECT * FROM inspections
+            "SELECT * FROM anprc_inspections
              WHERE channel_no = ?
                AND leave_called_at IS NOT NULL
                AND reset_completed_at IS NULL
@@ -193,7 +193,7 @@ class InboundController {
             [$channelNo]
         );
         if ($inspection) {
-            Database::update('inspections', [
+            Database::update('anprc_inspections', [
                 'state' => 'completed',
                 'reset_completed_at' => gmdate('Y-m-d H:i:s'),
             ], 'id = :id', ['id' => $inspection['id']]);
@@ -226,7 +226,7 @@ class InboundController {
             $imagePath = ImageStorage::saveBase64('uvis', $params['imageData'], 'jpg');
         }
 
-        $uvisId = Database::insert('inspection_uvis', [
+        $uvisId = Database::insert('anprc_inspection_uvis', [
             'inspection_id' => $inspectionId,
             'channel_no' => $channelNo,
             's300_inspection_id' => $params['inspectionId'] ?? null,
@@ -238,7 +238,7 @@ class InboundController {
         $coords = $params['coords'] ?? [];
         if (is_array($coords)) {
             foreach ($coords as $c) {
-                Database::insert('inspection_uvis_coords', [
+                Database::insert('anprc_inspection_uvis_coords', [
                     'uvis_id' => $uvisId,
                     'confidence' => $c['conf'] ?? null,
                     'x1' => $c['x1'] ?? 0,
@@ -261,10 +261,10 @@ class InboundController {
 
         // === Auto-decision trigger ===
         if ($inspection) {
-            $fresh = Database::fetchOne('SELECT * FROM inspections WHERE id = ?', [$inspection['id']]);
+            $fresh = Database::fetchOne('SELECT * FROM anprc_inspections WHERE id = ?', [$inspection['id']]);
             $verdict = DecisionEngine::evaluate($fresh);
             if ($verdict) {
-                $channel = Database::fetchOne('SELECT * FROM channels WHERE channel_no = ?', [$channelNo]);
+                $channel = Database::fetchOne('SELECT * FROM anprc_channels WHERE channel_no = ?', [$channelNo]);
                 if ($channel) DecisionExecutor::apply($fresh, $verdict, $channel);
             }
         }

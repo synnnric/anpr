@@ -8,11 +8,11 @@ use App\Services\InspectionService;
 
 class ChannelController {
     public function index(Request $req) {
-        return ['code' => 200, 'message' => 'success', 'data' => Database::fetchAll('SELECT * FROM channels ORDER BY id ASC')];
+        return ['code' => 200, 'message' => 'success', 'data' => Database::fetchAll('SELECT * FROM anprc_channels ORDER BY id ASC')];
     }
 
     public function show(Request $req) {
-        $row = Database::fetchOne('SELECT * FROM channels WHERE id = ?', [$req->param('id')]);
+        $row = Database::fetchOne('SELECT * FROM anprc_channels WHERE id = ?', [$req->param('id')]);
         if (!$row) { Response::notFound('Channel not found'); return null; }
         return ['code' => 200, 'message' => 'success', 'data' => $row];
     }
@@ -41,8 +41,8 @@ class ChannelController {
         foreach (self::RB_FIELDS as $k) {
             if (array_key_exists($k, $body)) $data[$k] = $body[$k];
         }
-        $id = Database::insert('channels', $data);
-        $row = Database::fetchOne('SELECT * FROM channels WHERE id = ?', [$id]);
+        $id = Database::insert('anprc_channels', $data);
+        $row = Database::fetchOne('SELECT * FROM anprc_channels WHERE id = ?', [$id]);
         InspectionService::logOperation([
             'actor_username' => $actor,
             'channel_no' => $row['channel_no'] ?? null,
@@ -57,7 +57,7 @@ class ChannelController {
     public function update(Request $req) {
         $id = (int)$req->param('id');
         $actor = AuthController::usernameFromRequest($req);
-        $existing = Database::fetchOne('SELECT * FROM channels WHERE id = ?', [$id]);
+        $existing = Database::fetchOne('SELECT * FROM anprc_channels WHERE id = ?', [$id]);
         if (!$existing) {
             InspectionService::logOperation([
                 'actor_username' => $actor, 'action' => 'channel.update',
@@ -74,8 +74,8 @@ class ChannelController {
                 $update[$k] = $k === 's300_base_url' ? rtrim((string)$body[$k], '/') : $body[$k];
             }
         }
-        if ($update) Database::update('channels', $update, 'id = :id', ['id' => $id]);
-        $row = Database::fetchOne('SELECT * FROM channels WHERE id = ?', [$id]);
+        if ($update) Database::update('anprc_channels', $update, 'id = :id', ['id' => $id]);
+        $row = Database::fetchOne('SELECT * FROM anprc_channels WHERE id = ?', [$id]);
         InspectionService::logOperation([
             'actor_username' => $actor,
             'channel_no' => $existing['channel_no'] ?? null,
@@ -90,8 +90,8 @@ class ChannelController {
     public function destroy(Request $req) {
         $id = (int)$req->param('id');
         $actor = AuthController::usernameFromRequest($req);
-        $existing = Database::fetchOne('SELECT channel_no FROM channels WHERE id = ?', [$id]);
-        Database::query('DELETE FROM channels WHERE id = ?', [$id]);
+        $existing = Database::fetchOne('SELECT channel_no FROM anprc_channels WHERE id = ?', [$id]);
+        Database::query('DELETE FROM anprc_channels WHERE id = ?', [$id]);
         InspectionService::logOperation([
             'actor_username' => $actor,
             'channel_no' => $existing['channel_no'] ?? null,
@@ -104,7 +104,7 @@ class ChannelController {
 
     public function status(Request $req) {
         $channelNo = $req->param('channelNo');
-        $channel = Database::fetchOne('SELECT * FROM channels WHERE channel_no = ?', [$channelNo]);
+        $channel = Database::fetchOne('SELECT * FROM anprc_channels WHERE channel_no = ?', [$channelNo]);
         if (!$channel) { Response::notFound('Channel not found'); return null; }
         $st = \App\Services\InspectionService::getChannelStatus($channelNo);
         return ['code' => 200, 'message' => 'success', 'data' => array_merge($st, ['channel' => $channel])];

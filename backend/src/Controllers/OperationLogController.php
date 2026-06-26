@@ -30,10 +30,10 @@ class OperationLogController {
 
         $whereSql = $where ? (' WHERE ' . implode(' AND ', $where)) : '';
 
-        $totalRow = Database::fetchOne('SELECT COUNT(*) AS c FROM operation_log' . $whereSql, $params);
+        $totalRow = Database::fetchOne('SELECT COUNT(*) AS c FROM anprc_operation_log' . $whereSql, $params);
         $total = (int)($totalRow['c'] ?? 0);
 
-        $sql = 'SELECT * FROM operation_log' . $whereSql
+        $sql = 'SELECT * FROM anprc_operation_log' . $whereSql
              . ' ORDER BY id DESC LIMIT ' . $limit . ' OFFSET ' . $offset;
         $rows = Database::fetchAll($sql, $params);
 
@@ -51,12 +51,12 @@ class OperationLogController {
     // GET /api/operation-log/facets — distinct actors + actions for filter dropdowns.
     public function facets(Request $req) {
         $actors = Database::fetchAll(
-            "SELECT actor_username, COUNT(*) AS n FROM operation_log
+            "SELECT actor_username, COUNT(*) AS n FROM anprc_operation_log
              WHERE actor_username IS NOT NULL
              GROUP BY actor_username ORDER BY n DESC LIMIT 50"
         );
         $actions = Database::fetchAll(
-            "SELECT action, COUNT(*) AS n FROM operation_log
+            "SELECT action, COUNT(*) AS n FROM anprc_operation_log
              GROUP BY action ORDER BY n DESC LIMIT 100"
         );
         return [

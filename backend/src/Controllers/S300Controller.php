@@ -11,7 +11,7 @@ use App\Services\VisitService;
 class S300Controller {
 
     private static function clientForChannel(string $channelNo): array {
-        $channel = Database::fetchOne('SELECT * FROM channels WHERE channel_no = ?', [$channelNo]);
+        $channel = Database::fetchOne('SELECT * FROM anprc_channels WHERE channel_no = ?', [$channelNo]);
         if (!$channel) {
             Response::error("Channel not found: $channelNo", 404);
             exit;
@@ -49,9 +49,40 @@ class S300Controller {
             return;
         }
 
+        // === Blacklist deny — ANPR entry stage (takes precedence over VIP) ===
+        // This lane admits every plate EXCEPT those on the blacklist (regular
+        // AND VIP). A blacklisted plate is refused at the ANPR stage: the entry
+        // gate stays shut and NO S300 inspection is started. We only write an
+        // audit-log entry — the worker already recorded the ANPR detection in
+        // `vehicles`. Checked before the VIP bypass so it overrides VIP.
+        if (InspectionService::isBlacklisted($plate)) {
+            InspectionService::logOperation([
+                'actor_username' => $actor,
+                'channel_no' => $channelNo,
+                'inspection_id' => null,
+                'action' => 'come_blacklist_denied',
+                'request_payload' => ['licensePlateNo' => $plate],
+                'response_payload' => ['blacklisted' => true],
+                'status' => 'success',
+            ]);
+            InspectionService::pushEvent('blacklist-denied', [
+                'channelNo' => $channelNo,
+                'licensePlate' => $plate,
+            ]);
+            Response::json([
+                'code' => 200,
+                'message' => 'blacklisted: entry denied at ANPR stage',
+                'data' => [
+                    'blacklisted' => true,
+                    'licensePlate' => $plate,
+                ],
+            ]);
+            return;
+        }
+
         // === VIP bypass ===
         if (InspectionService::isVip($plate)) {
-            $id = Database::insert('inspections', [
+            $id = Database::insert('anprc_inspections', [
                 'channel_no' => $channelNo,
                 'license_plate' => $plate,
                 'state' => 'vip_skipped',
@@ -63,7 +94,7 @@ class S300Controller {
             ]);
             // Create the visit record + enqueue whitelist for exit camera
             VisitService::createEntry($plate, $channelNo, $id);
-            $channel = Database::fetchOne('SELECT * FROM channels WHERE channel_no = ?', [$channelNo]);
+            $channel = Database::fetchOne('SELECT * FROM anprc_channels WHERE channel_no = ?', [$channelNo]);
             if ($channel) {
                 $exit = VisitService::findPairedExit($channel);
                 if ($exit && !empty($exit['anpr_device_sn'])) {
@@ -75,6 +106,8 @@ class S300Controller {
                 \App\Services\DecisionExecutor::openEntryGate(
                     ['id' => $id, 'channel_no' => $channelNo], $channel
                 );
+                // Greet by voice + show plate on the camera LED, like the vendor CP.
+                \App\Services\DecisionExecutor::announceRecognition($channel, $plate, $id, $channelNo);
             }
             InspectionService::logOperation([
                 'actor_username' => $actor,
@@ -124,13 +157,13 @@ class S300Controller {
 
         // Look up the most recent ANPR detection to capture vehicle_id for fake-plate check
         $vehicle = Database::fetchOne(
-            'SELECT id FROM vehicles WHERE license_plate = ? ORDER BY id DESC LIMIT 1',
+            'SELECT id FROM anprc_vehicles WHERE license_plate = ? ORDER BY id DESC LIMIT 1',
             [$plate]
         );
 
         $timeoutSec = (int)($channel['uvis_timeout_sec'] ?? 30);
         try {
-            $inspectionId = Database::insert('inspections', [
+            $inspectionId = Database::insert('anprc_inspections', [
                 'channel_no' => $channelNo,
                 'vehicle_id' => $vehicle['id'] ?? null,
                 'license_plate' => $plate,
@@ -166,6 +199,8 @@ class S300Controller {
         \App\Services\DecisionExecutor::openEntryGate(
             ['id' => $inspectionId, 'channel_no' => $channelNo], $channel
         );
+        // Greet by voice + show plate on the camera LED, like the vendor CP.
+        \App\Services\DecisionExecutor::announceRecognition($channel, $plate, $inspectionId, $channelNo);
 
         // Open a visit record so we can pair it to the eventual exit
         VisitService::createEntry($plate, $channelNo, $inspectionId);
@@ -215,7 +250,7 @@ class S300Controller {
         }, null, $inspection['id'] ?? null, $actor);
 
         if ($inspection && $result['ok']) {
-            Database::update('inspections', [
+            Database::update('anprc_inspections', [
                 'leave_called_at' => gmdate('Y-m-d H:i:s'),
                 'state' => 'resetting',
             ], 'id = :id', ['id' => $inspection['id']]);
@@ -258,7 +293,7 @@ class S300Controller {
         }, null, $inspection['id'] ?? null, $actor);
 
         if ($inspection && $result['ok']) {
-            Database::update('inspections', ['state' => 'emergency_stop'], 'id = :id', ['id' => $inspection['id']]);
+            Database::update('anprc_inspections', ['state' => 'emergency_stop'], 'id = :id', ['id' => $inspection['id']]);
         }
 
         Response::json([
@@ -308,7 +343,7 @@ class S300Controller {
             foreach ($data as $item) {
                 if (!isset($item['index'], $item['language'], $item['url'])) continue;
                 Database::query(
-                    "INSERT INTO audio_prompts (audio_index, language, url, description)
+                    "INSERT INTO anprc_audio_prompts (audio_index, language, url, description)
                      VALUES (:idx, :lang, :url, :desc)
                      ON CONFLICT (audio_index, language)
                      DO UPDATE SET url = EXCLUDED.url, description = EXCLUDED.description",
