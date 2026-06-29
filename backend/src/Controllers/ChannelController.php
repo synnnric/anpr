@@ -17,7 +17,7 @@ class ChannelController {
         return ['code' => 200, 'message' => 'success', 'data' => $row];
     }
 
-    private const RB_FIELDS = ['rb_ip', 'rb_port', 'rb_device_no', 'rb_board_id', 'rb_column_num', 'uvis_timeout_sec', 'failure_audio_index', 'kind', 'paired_channel_id'];
+    private const EXTRA_FIELDS = ['uvis_timeout_sec', 'failure_audio_index', 'kind', 'paired_channel_id'];
 
     public function create(Request $req) {
         $body = $req->json();
@@ -38,7 +38,7 @@ class ChannelController {
             'name' => $body['name'] ?? null,
             'enabled' => isset($body['enabled']) ? (int)(bool)$body['enabled'] : 1,
         ];
-        foreach (self::RB_FIELDS as $k) {
+        foreach (self::EXTRA_FIELDS as $k) {
             if (array_key_exists($k, $body)) $data[$k] = $body[$k];
         }
         $id = Database::insert('anprc_channels', $data);
@@ -67,7 +67,7 @@ class ChannelController {
             Response::notFound('Channel not found'); return null;
         }
         $body = $req->json();
-        $allowed = array_merge(['channel_no', 'anpr_device_sn', 's300_base_url', 'name', 'enabled'], self::RB_FIELDS);
+        $allowed = array_merge(['channel_no', 'anpr_device_sn', 's300_base_url', 'name', 'enabled'], self::EXTRA_FIELDS);
         $update = [];
         foreach ($allowed as $k) {
             if (array_key_exists($k, $body)) {

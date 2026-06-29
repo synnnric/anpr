@@ -9,11 +9,6 @@ export interface S300Channel {
   enabled: number;
   kind: ChannelKind;
   paired_channel_id: number | null;
-  rb_ip: string | null;
-  rb_port: number | null;
-  rb_device_no: string | null;
-  rb_board_id: string | null;
-  rb_column_num: number | null;
   uvis_timeout_sec: number;
   failure_audio_index: number | null;
   created_at: string;

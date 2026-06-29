@@ -26,6 +26,7 @@ use App\Controllers\VisitsController;
 use App\Controllers\MqttQueueController;
 use App\Controllers\MqttLogController;
 use App\Controllers\DashboardController;
+use App\Controllers\RoadBlockerController;
 use App\Controllers\AdminController;
 
 // ===== CORS =====
@@ -124,6 +125,14 @@ $router->get ('/api/mqtt-log/message-names', fn($r) => $mlog->messageNames($r));
 // === Dashboard snapshot ===
 $dash = new DashboardController();
 $router->get('/api/dashboard', fn($r) => $dash->index($r));
+
+// === Road blocker (CORX relay) — manual control panel ===
+$rb = new RoadBlockerController();
+$router->get ('/api/road-blocker/status',    fn($r) => $rb->status($r));
+$router->post('/api/road-blocker/open',      fn($r) => $rb->open($r));
+$router->post('/api/road-blocker/close',     fn($r) => $rb->close($r));
+$router->post('/api/road-blocker/stop',      fn($r) => $rb->stop($r));
+$router->post('/api/road-blocker/auto-open', fn($r) => $rb->setAutoOpen($r));
 
 // === Inspections ===
 $ins = new InspectionController();

@@ -32,12 +32,8 @@ export interface S300Status {
 }
 
 export interface RoadBlockerStatus {
-  online: boolean;
-  reachable: boolean;
-  controller_online?: boolean;
-  columns?: { [boardId: string]: { [columnId: string]: number } };
-  reason?: string;
-  elapsed_ms?: number;
+  enabled: boolean;
+  mode: string;
 }
 
 export interface DashboardChannel {
@@ -47,11 +43,6 @@ export interface DashboardChannel {
   enabled: boolean;
   anpr_device_sn: string | null;
   s300_base_url: string;
-  rb_ip: string | null;
-  rb_port: number | null;
-  rb_device_no: string | null;
-  rb_board_id: string | null;
-  rb_column_num: number | null;
   paired_channel_id: number | null;
   uvis_timeout_sec: number;
   anpr_last_heartbeat_at?: string | null;

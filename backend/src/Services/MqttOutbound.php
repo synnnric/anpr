@@ -19,6 +19,58 @@ class MqttOutbound {
     }
 
     /**
+     * Drive the CORX CX-5104E-L road-blocker relay. Unlike camera commands (which
+     * the worker wraps in the device envelope and publishes to device/{sn}/...
+     * topics), the relay expects a RAW JSON body on its own subscribe topic. We
+     * enqueue command_name 'corx_relay' with {topic, body}; the worker recognises
+     * it and publishes `body` verbatim.
+     *
+     *   $action: 'open' (DOWN/clear lane) | 'close' (UP/block lane) | 'stop'
+     *
+     * @return array{ok:bool, queued?:int, topic?:string, body?:array, error?:string}
+     */
+    public static function blockerRelay(string $action): array {
+        $get = static function (string $key, string $default): string {
+            $row = Database::fetchOne("SELECT value FROM anprc_settings WHERE key_name = ?", [$key]);
+            return (string)($row['value'] ?? $default);
+        };
+        $on = static fn(string $v) => in_array($v, ['1', 'true', 'True'], true);
+
+        if (!$on($get('blocker_relay_enabled', '1'))) {
+            return ['ok' => false, 'error' => 'blocker relay disabled'];
+        }
+        $chKey = [
+            'open'  => ['blocker_relay_open_ch',  'A01'],
+            'close' => ['blocker_relay_close_ch', 'A02'],
+            'stop'  => ['blocker_relay_stop_ch',  'A03'],
+        ];
+        if (!isset($chKey[$action])) {
+            return ['ok' => false, 'error' => "unknown blocker action: $action"];
+        }
+        $topic = $get('blocker_relay_topic', 'testsubscribe');
+        $value = (int)$get('blocker_relay_value', '210001');
+        $res   = substr($get('blocker_relay_res', '123'), 0, 15);
+        $chan  = $get($chKey[$action][0], $chKey[$action][1]);
+
+        $body = [$chan => $value, 'res' => $res];
+        $queued = self::enqueueRaw($topic, $body, "blocker_$action");
+        return ['ok' => true, 'queued' => $queued, 'topic' => $topic, 'body' => $body];
+    }
+
+    /**
+     * Enqueue a raw MQTT publish (no camera envelope). command_name 'corx_relay'
+     * tells the worker to publish `body` verbatim to `topic`.
+     */
+    public static function enqueueRaw(string $topic, array $body, string $label): int {
+        return Database::insert('anprc_mqtt_outbound_queue', [
+            'device_sn'    => 'corx-relay',
+            'command_name' => 'corx_relay',
+            'payload'      => json_encode(['topic' => $topic, 'body' => $body, 'label' => $label], JSON_UNESCAPED_UNICODE),
+            'status'       => 'pending',
+        ]);
+    }
+
+    /**
      * Resolve the serial-frame encoder for the camera's display+voice control
      * card. The vendor keys this off the per-device display_motherboard_type
      * (1 = 科发/KF, 2 = 方控/FK). Our cameras are FK, so FK is the default;

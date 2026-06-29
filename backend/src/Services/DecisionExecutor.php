@@ -312,54 +312,61 @@ class DecisionExecutor {
         ];
     }
 
+    /**
+     * Lower (OPEN) the road blocker so a cleared vehicle can pass. Driven via the
+     * CORX CX-5104E-L relay over MQTT (MqttOutbound::blockerRelay enqueues a pulse;
+     * the worker publishes it). We deliberately only OPEN here — raising/closing is
+     * left to the hardware controller / manual control (crush-hazard if raised on a
+     * blind timer while a vehicle is still passing). See [[road-blocker-corx-relay]].
+     */
     private static function openBlocker(array $inspection, array $channel, string $decision): void {
-        if (empty($channel['rb_ip']) || empty($channel['rb_device_no']) || empty($channel['rb_board_id'])) {
-            Logger::warn("[Decision] inspection #{$inspection['id']} {$decision} but channel {$channel['channel_no']} has no road blocker configured");
+        // Auto road-blocker control is DISABLED by default. The blocker has no
+        // vehicle-present sensor (unlike the ANPR loop), so opening/lowering it on
+        // the inspection verdict alone is a collision risk. It is operated MANUALLY
+        // from the Road Blocker control page. To re-integrate auto-open into the
+        // flow later, set anprc_settings.blocker_auto_open_enabled = '1'. The code
+        // below is preserved intact for that. See [[road-blocker-corx-relay]].
+        $auto = Database::fetchOne("SELECT value FROM anprc_settings WHERE key_name = 'blocker_auto_open_enabled'");
+        if (!in_array((string)($auto['value'] ?? '0'), ['1', 'true', 'True'], true)) {
+            Logger::info("[Decision] inspection #{$inspection['id']} {$decision}: auto blocker-open disabled (manual only)");
+            return;
+        }
+
+        $result = MqttOutbound::blockerRelay('open');
+
+        if (!$result['ok']) {
+            Logger::warn("[Decision] inspection #{$inspection['id']} {$decision}: blocker open skipped — {$result['error']}");
             InspectionService::logOperation([
                 'channel_no' => $inspection['channel_no'],
                 'inspection_id' => $inspection['id'],
                 'action' => 'open_blocker_skipped',
-                'request_payload' => ['reason' => 'road blocker not configured'],
+                'request_payload' => ['reason' => $result['error']],
                 'status' => 'failed',
-                'error_message' => 'rb_ip/rb_device_no/rb_board_id not set on channel',
+                'error_message' => $result['error'],
             ]);
             return;
         }
-
-        $client = new RoadBlockerClient($channel['rb_ip'], (int)$channel['rb_port']);
-        $result = $client->openColumn(
-            $channel['rb_device_no'],
-            $channel['rb_board_id'],
-            (int)$channel['rb_column_num']
-        );
 
         InspectionService::logOperation([
             'channel_no' => $inspection['channel_no'],
             'inspection_id' => $inspection['id'],
             'action' => 'open_blocker',
-            'request_payload' => [
-                'deviceNo' => $channel['rb_device_no'],
-                'boardId' => $channel['rb_board_id'],
-                'columnNum' => (int)$channel['rb_column_num'],
-                'action' => 'down',
-            ],
-            'response_payload' => is_array($result['body']) ? $result['body'] : ['raw' => $result['body']],
-            'status' => $result['ok'] ? 'success' : 'failed',
-            'error_message' => $result['error'],
+            'request_payload' => ['topic' => $result['topic'], 'body' => $result['body'], 'queue_id' => $result['queued']],
+            'response_payload' => ['queued' => $result['queued']],
+            'status' => 'success',
+            'error_message' => null,
         ]);
 
-        if ($result['ok']) {
-            Database::update('anprc_inspections', [
-                'blocker_opened' => 1,
-                'blocker_opened_at' => gmdate('Y-m-d H:i:s'),
-            ], 'id = :id', ['id' => $inspection['id']]);
-            InspectionService::pushEvent('blocker-opened', [
-                'inspectionId' => $inspection['id'],
-                'channelNo' => $inspection['channel_no'],
-                'licensePlate' => $inspection['license_plate'],
-                'decision' => $decision,
-            ]);
-        }
+        Database::update('anprc_inspections', [
+            'blocker_opened' => 1,
+            'blocker_opened_at' => gmdate('Y-m-d H:i:s'),
+        ], 'id = :id', ['id' => $inspection['id']]);
+        InspectionService::pushEvent('blocker-opened', [
+            'inspectionId' => $inspection['id'],
+            'channelNo' => $inspection['channel_no'],
+            'licensePlate' => $inspection['license_plate'],
+            'decision' => $decision,
+        ]);
     }
 
     private static function sendBackUpAudio(array $inspection, array $channel): void {

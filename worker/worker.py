@@ -416,6 +416,26 @@ def mqtt_outbound_loop() -> None:
                 device_sn = item["device_sn"]
                 command = item["command_name"]
                 payload = item["payload"]
+
+                # CORX road-blocker relay: publish the raw JSON body to the relay's
+                # own subscribe topic (no camera envelope, no device/{sn}/ topic).
+                if command == "corx_relay":
+                    topic = (payload or {}).get("topic")
+                    body = (payload or {}).get("body") or {}
+                    try:
+                        rc = State.mqtt_client.publish(topic, json.dumps(body), qos=0).rc
+                        if rc == mqtt.MQTT_ERR_SUCCESS:
+                            backend_post(f"/api/mqtt-queue/{cmd_id}/sent", {})
+                            log.info("outbound: corx_relay %s -> %s (queue#%s)",
+                                     (payload or {}).get("label"), topic, cmd_id)
+                        else:
+                            backend_post(f"/api/mqtt-queue/{cmd_id}/failed", {"error": f"paho rc={rc}"})
+                            log.warning("outbound: corx_relay publish rc=%s for queue#%s", rc, cmd_id)
+                    except Exception as e:  # noqa: BLE001
+                        backend_post(f"/api/mqtt-queue/{cmd_id}/failed", {"error": str(e)})
+                        log.warning("outbound: corx_relay exception for queue#%s: %s", cmd_id, e)
+                    continue
+
                 # Two down-topic layouts exist in the field:
                 #   standard (sim/docs):  device/{sn}/message/down/{name}
                 #   sn-first (some cams): {sn}/device/message/down/{name}

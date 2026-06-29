@@ -10,14 +10,6 @@ import { parsePgTs, fmtIdleTime } from '../utils/helpers';
 import { useI18n } from '../contexts/I18nContext';
 import type { TKey } from '../i18n/translations';
 
-const COLUMN_STATE_KEY: Record<number, { key: TKey; color: string }> = {
-  0: { key: 'dashboard.col.unknown',    color: 'text-text-secondary' },
-  1: { key: 'dashboard.col.descending', color: 'text-amber-400' },
-  3: { key: 'dashboard.col.lowered',    color: 'text-green-400' },
-  5: { key: 'dashboard.col.rising',     color: 'text-blue-400' },
-  7: { key: 'dashboard.col.raised',     color: 'text-red-400' },
-};
-
 const DECISION_META: Record<string, { key: TKey; bg: string; text: string }> = {
   pass:     { key: 'dashboard.decision.pass',     bg: 'bg-green-500/15',   text: 'text-green-300' },
   suspect:  { key: 'dashboard.decision.suspect',  bg: 'bg-amber-500/15',   text: 'text-amber-300' },
@@ -183,15 +175,13 @@ function flattenDevices(channels: DashboardChannel[], labels: { anpr: string; s3
           : (c.s300.reason ?? labels.unreachable),
       });
     }
-    if (c.kind === 'entry' && c.rb_ip) {
+    if (c.kind === 'entry' && c.road_blocker) {
       rows.push({
         key: `${c.channel_no}-rb`,
         channel: c.channel_no, type: labels.rb, icon: Columns3,
         label: `${c.channel_no} · ${labels.rb}`,
-        online: c.road_blocker?.online ?? null,
-        detail: c.road_blocker?.online
-          ? `${c.road_blocker.elapsed_ms ?? '?'}ms`
-          : (c.road_blocker?.reason ?? labels.unreachable),
+        online: c.road_blocker.enabled,
+        detail: c.road_blocker.enabled ? 'MQTT relay' : labels.unreachable,
       });
     }
   }
@@ -245,9 +235,9 @@ function countDevices(channels: DashboardChannel[]): { total: number; online: nu
         total++;
         if (c.s300.reachable) online++;
       }
-      if (c.rb_ip) {
+      if (c.road_blocker) {
         total++;
-        if (c.road_blocker?.online) online++;
+        if (c.road_blocker.enabled) online++;
       }
     }
   }
@@ -422,33 +412,16 @@ function RoadBlockerSection({ ch }: { ch: DashboardChannel }) {
   const { t } = useI18n();
   const rb = ch.road_blocker;
   if (!rb) return null;
-  const cols = rb.columns ?? {};
-  const rows: [string, React.ReactNode][] = rb.online ? [
-    [t('dashboard.row.address'), <span className="font-mono text-[11px]">{ch.rb_ip}:{ch.rb_port}</span>],
-    [t('dashboard.row.device'),  <span className="font-mono">{ch.rb_device_no} / {t('dashboard.row.board')} {ch.rb_board_id}</span>],
-    [t('dashboard.row.columns'), <div className="flex flex-wrap gap-1.5">
-      {Object.entries(cols).map(([bid, colMap]) => Object.entries(colMap).map(([cid, code]) => {
-        const m = COLUMN_STATE_KEY[code] ?? COLUMN_STATE_KEY[0];
-        return (
-          <span key={`${bid}-${cid}`}
-            className="text-[10px] px-1.5 py-0.5 bg-surface-dark border border-border rounded">
-            {bid}/{cid} <span className={m.color}>{t(m.key)}</span>
-          </span>
-        );
-      }))}
-    </div>],
-    [t('dashboard.row.latency'), <span>{rb.elapsed_ms ?? '—'} ms</span>],
-  ] : [
-    [t('dashboard.row.address'), <span className="font-mono text-[11px]">{ch.rb_ip ?? '—'}:{ch.rb_port ?? '—'}</span>],
-    [t('dashboard.row.reason'),  <span className="text-danger text-[11px]">{rb.reason ?? t('dashboard.health.unreachable')}</span>],
+  const rows: [string, React.ReactNode][] = [
+    [t('dashboard.row.mode'), <span className="font-mono text-[11px]">{rb.mode}</span>],
   ];
   return (
     <DeviceRow
       icon={Columns3}
       title={t('dashboard.device.rb')}
       statusBadge={
-        rb.online ? <span className="text-[10px] px-1.5 py-0.5 bg-green-500/15 text-green-300 border border-green-500/30 rounded">{t('dashboard.badge.online')}</span>
-        : <span className="text-[10px] px-1.5 py-0.5 bg-red-500/15 text-red-300 border border-red-500/30 rounded">{t('dashboard.badge.offline')}</span>
+        rb.enabled ? <span className="text-[10px] px-1.5 py-0.5 bg-green-500/15 text-green-300 border border-green-500/30 rounded">{t('rb.status.enabled')}</span>
+        : <span className="text-[10px] px-1.5 py-0.5 bg-surface-light text-text-secondary border border-border rounded">{t('rb.status.disabled')}</span>
       }
       rows={<RowGrid rows={rows} />}
     />

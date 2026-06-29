@@ -117,45 +117,38 @@ class CronController {
             )['value'] ?? 8);
             $closeCutoff = gmdate('Y-m-d H:i:s', time() - $closeAfter);
             $toClose = Database::fetchAll(
-                "SELECT i.*, c.rb_ip, c.rb_port, c.rb_device_no, c.rb_board_id, c.rb_column_num
-                 FROM anprc_inspections i
-                 JOIN anprc_channels c ON c.channel_no = i.channel_no
+                "SELECT i.* FROM anprc_inspections i
                  WHERE i.blocker_opened = 1
                    AND i.blocker_closed_at IS NULL
                    AND i.blocker_opened_at IS NOT NULL
-                   AND i.blocker_opened_at <= ?
-                   AND c.rb_ip IS NOT NULL
-                   AND c.rb_device_no IS NOT NULL",
+                   AND i.blocker_opened_at <= ?",
                 [$closeCutoff]
             );
-            foreach ($toClose as $insp) {
-                $client = new \App\Services\RoadBlockerClient(
-                    (string)$insp['rb_ip'], (int)$insp['rb_port']
-                );
-                $res = $client->closeColumn(
-                    (string)$insp['rb_device_no'],
-                    (string)$insp['rb_board_id'],
-                    (int)$insp['rb_column_num']
-                );
-                Database::update('anprc_inspections', [
-                    'blocker_closed_at' => $now,
-                ], 'id = :id', ['id' => $insp['id']]);
-                \App\Services\InspectionService::logOperation([
-                    'channel_no'   => $insp['channel_no'],
-                    'inspection_id'=> $insp['id'],
-                    'action'       => 'blocker_close',
-                    'request_payload'  => ['board' => $insp['rb_board_id'], 'column' => $insp['rb_column_num'], 'mode' => 'backend_timer'],
-                    'response_payload' => ['ok' => $res['ok'], 'elapsed_ms' => $res['elapsed_ms'] ?? null],
-                    'status'       => $res['ok'] ? 'success' : 'failed',
-                    'error_message'=> $res['ok'] ? null : ($res['error'] ?? "http_{$res['status']}"),
-                ]);
-                $blockerClosed[] = [
-                    'inspectionId' => (int)$insp['id'],
-                    'plate'        => $insp['license_plate'],
-                    'channelNo'    => $insp['channel_no'],
-                    'ok'           => $res['ok'],
-                    'by'           => 'backend_timer',
-                ];
+            // The CORX relay is a single shared device — close (raise) it ONCE if
+            // any inspection is due, then mark them all closed.
+            if ($toClose) {
+                $res = \App\Services\MqttOutbound::blockerRelay('close');
+                foreach ($toClose as $insp) {
+                    Database::update('anprc_inspections', [
+                        'blocker_closed_at' => $now,
+                    ], 'id = :id', ['id' => $insp['id']]);
+                    \App\Services\InspectionService::logOperation([
+                        'channel_no'   => $insp['channel_no'],
+                        'inspection_id'=> $insp['id'],
+                        'action'       => 'blocker_close',
+                        'request_payload'  => ['mode' => 'backend_timer', 'topic' => $res['topic'] ?? null, 'body' => $res['body'] ?? null],
+                        'response_payload' => ['queued' => $res['queued'] ?? null],
+                        'status'       => $res['ok'] ? 'success' : 'failed',
+                        'error_message'=> $res['ok'] ? null : ($res['error'] ?? 'enqueue_failed'),
+                    ]);
+                    $blockerClosed[] = [
+                        'inspectionId' => (int)$insp['id'],
+                        'plate'        => $insp['license_plate'],
+                        'channelNo'    => $insp['channel_no'],
+                        'ok'           => (bool)$res['ok'],
+                        'by'           => 'backend_timer',
+                    ];
+                }
             }
         }
         // else 'hardware' (default): the backend issues no close command; the

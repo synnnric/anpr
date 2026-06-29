@@ -1,37 +1,28 @@
-import type {
-  RoadBlockerConfig,
-  RoadBlockerStatusResponse,
-  RoadBlockerOperationRequest,
-  RoadBlockerOperationResponse,
-} from '../types/roadblocker';
+import type { RoadBlockerStatus, RoadBlockerActionResult, BlockerAction } from '../types/roadblocker';
 
-function buildBaseUrl(config: RoadBlockerConfig): string {
-  return `http://${config.ip}:${config.port}`;
-}
+const API_BASE = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE
+  || 'http://127.0.0.1/anpr_backend';
 
-export async function getDeviceStatus(config: RoadBlockerConfig): Promise<RoadBlockerStatusResponse> {
-  const url = `${buildBaseUrl(config)}/open/getStatus/${encodeURIComponent(config.deviceNo)}`;
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: { 'Accept': 'application/json' },
+interface ApiResponse<T> { code: number; message: string; data: T }
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(API_BASE + path, {
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-  return res.json();
+  const json: ApiResponse<T> = await res.json();
+  if (!res.ok || json.code !== 200) throw new Error(json.message || `HTTP ${res.status}`);
+  return json.data;
 }
 
-export async function sendOperation(
-  config: RoadBlockerConfig,
-  request: RoadBlockerOperationRequest,
-): Promise<RoadBlockerOperationResponse> {
-  const url = `${buildBaseUrl(config)}/open/operation`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(request),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-  return res.json();
-}
+/** CORX relay config + last action (live up/down state is not reported by the device synchronously). */
+export const getBlockerStatus = () => request<RoadBlockerStatus>('GET', '/api/road-blocker/status');
+
+/** Pulse the relay: open (DOWN/clear lane), close (UP/block lane), or stop. */
+export const sendBlockerAction = (action: BlockerAction) =>
+  request<RoadBlockerActionResult>('POST', `/api/road-blocker/${action}`);
+
+/** Enable/disable auto-open on a passed inspection (OFF by default — collision risk). */
+export const setBlockerAutoOpen = (enabled: boolean) =>
+  request<{ auto_open: boolean }>('POST', '/api/road-blocker/auto-open', { enabled });

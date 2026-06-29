@@ -1032,11 +1032,6 @@ function ChannelEditModal({ initial, allChannels, onSave, onCancel }: {
     s300_base_url: initial?.s300_base_url || 'http://127.0.0.1:8086',
     anpr_device_sn: initial?.anpr_device_sn || '',
     enabled: initial?.enabled ?? 1,
-    rb_ip: initial?.rb_ip || '',
-    rb_port: initial?.rb_port ?? 8080,
-    rb_device_no: initial?.rb_device_no || '',
-    rb_board_id: initial?.rb_board_id || '',
-    rb_column_num: initial?.rb_column_num ?? 1,
     uvis_timeout_sec: initial?.uvis_timeout_sec ?? 30,
     failure_audio_index: initial?.failure_audio_index ?? 7,
   });
@@ -1094,22 +1089,6 @@ function ChannelEditModal({ initial, allChannels, onSave, onCancel }: {
 
           {data.kind === 'entry' && <>
           <div className="pt-3 border-t border-border">
-            <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">{t('s300.ch.section.rb')}</h4>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label={t('s300.ch.field.rb_ip')} value={data.rb_ip}
-                onChange={v => setData({...data, rb_ip: v})} placeholder={t('s300.ch.field.rb_ip_ph')} />
-              <Field label={t('s300.ch.field.rb_port')} value={String(data.rb_port)}
-                onChange={v => setData({...data, rb_port: parseInt(v) || 8080})} placeholder="8080" />
-              <Field label={t('s300.ch.field.rb_device_no')} value={data.rb_device_no}
-                onChange={v => setData({...data, rb_device_no: v})} placeholder={t('s300.ch.field.rb_device_no_ph')} />
-              <Field label={t('s300.ch.field.rb_board_id')} value={data.rb_board_id}
-                onChange={v => setData({...data, rb_board_id: v})} placeholder="01" />
-              <Field label={t('s300.ch.field.rb_column_num')} value={String(data.rb_column_num)}
-                onChange={v => setData({...data, rb_column_num: parseInt(v) || 1})} placeholder="1" />
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-border">
             <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">{t('s300.ch.section.decision')}</h4>
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('s300.ch.field.uvis_timeout')} value={String(data.uvis_timeout_sec)}
@@ -1137,11 +1116,6 @@ function ChannelEditModal({ initial, allChannels, onSave, onCancel }: {
             s300_base_url: data.s300_base_url,
             anpr_device_sn: data.anpr_device_sn || null,
             enabled: data.enabled,
-            rb_ip: data.rb_ip || null,
-            rb_port: data.rb_port,
-            rb_device_no: data.rb_device_no || null,
-            rb_board_id: data.rb_board_id || null,
-            rb_column_num: data.rb_column_num,
             uvis_timeout_sec: data.uvis_timeout_sec,
             failure_audio_index: data.failure_audio_index,
           })}

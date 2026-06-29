@@ -3,7 +3,6 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Request;
-use App\Services\RoadBlockerClient;
 
 /**
  * Single-shot snapshot of platform health + per-channel device state for the
@@ -13,7 +12,6 @@ class DashboardController {
 
     private const STALE_INBOUND_SEC = 30;   // ANPR considered offline if no msg in this window
     private const STALE_TICK_SEC    = 15;   // Worker considered down if no cron tick recently
-    private const RB_TIMEOUT_SEC    = 2;    // Per-channel road-blocker probe budget
     private const BROKER_TIMEOUT_S  = 1.5;  // TCP probe budget for Mosquitto
     private const BROKER_HOST       = '127.0.0.1';
     private const BROKER_PORT       = 1883;
@@ -103,11 +101,6 @@ class DashboardController {
                 'enabled'           => (int)$c['enabled'] === 1,
                 'anpr_device_sn'    => $c['anpr_device_sn'],
                 's300_base_url'     => $c['s300_base_url'],
-                'rb_ip'             => $c['rb_ip'],
-                'rb_port'           => $c['rb_port'] !== null ? (int)$c['rb_port'] : null,
-                'rb_device_no'      => $c['rb_device_no'],
-                'rb_board_id'       => $c['rb_board_id'],
-                'rb_column_num'     => $c['rb_column_num'] !== null ? (int)$c['rb_column_num'] : null,
                 'paired_channel_id' => $c['paired_channel_id'] !== null ? (int)$c['paired_channel_id'] : null,
                 'uvis_timeout_sec'  => (int)$c['uvis_timeout_sec'],
             ];
@@ -205,34 +198,16 @@ class DashboardController {
                 'elapsed_ms' => $elapsedMs];
     }
 
+    /**
+     * Road-blocker status for the dashboard. The blocker is now a CORX relay
+     * driven over MQTT (no synchronous HTTP probe possible / needed), so we just
+     * report whether the relay path is enabled and configured. Live up/down state
+     * is observed on the Road Blocker control page.
+     */
     private function probeRoadBlocker(array $channel): ?array {
-        if (!$channel['rb_ip'] || !$channel['rb_port'] || !$channel['rb_device_no']) {
-            return ['online' => false, 'reachable' => false, 'reason' => 'not_configured'];
-        }
-        try {
-            $client = new RoadBlockerClient((string)$channel['rb_ip'], (int)$channel['rb_port'], self::RB_TIMEOUT_SEC);
-            $res = $client->getStatus($channel['rb_device_no']);
-            if (!$res['ok']) {
-                return ['online' => false, 'reachable' => false,
-                        'reason' => $res['error'] ?? "http_{$res['status']}",
-                        'elapsed_ms' => $res['elapsed_ms']];
-            }
-            $body = $res['body'];
-            if (!is_array($body) || ($body['code'] ?? 0) !== 200 || !isset($body['data'])) {
-                return ['online' => false, 'reachable' => true,
-                        'reason' => $body['msg'] ?? 'unexpected_response',
-                        'elapsed_ms' => $res['elapsed_ms']];
-            }
-            return [
-                'online'     => true,
-                'reachable'  => true,
-                'controller_online' => (bool)($body['data']['controlTheDeviceOnline'] ?? false),
-                'columns'    => $body['data']['liftingColumnsStatus'] ?? [],
-                'elapsed_ms' => $res['elapsed_ms'],
-            ];
-        } catch (\Throwable $e) {
-            return ['online' => false, 'reachable' => false, 'reason' => $e->getMessage()];
-        }
+        $row = Database::fetchOne("SELECT value FROM anprc_settings WHERE key_name = 'blocker_relay_enabled'");
+        $enabled = in_array((string)($row['value'] ?? '1'), ['1', 'true', 'True'], true);
+        return ['enabled' => $enabled, 'mode' => 'corx_relay_mqtt'];
     }
 
     // ------------------------------------------------------------------ today

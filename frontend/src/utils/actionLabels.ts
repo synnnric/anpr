@@ -39,6 +39,9 @@ const ACTION_LABELS: Record<string, { id: string; en: string }> = {
   open_blocker:          { id: 'Buka palang jalan', en: 'Open road blocker' },
   open_blocker_skipped:  { id: 'Buka palang jalan dilewati', en: 'Open road blocker skipped' },
   blocker_close:         { id: 'Tutup palang', en: 'Close blocker' },
+  blocker_open_manual:   { id: 'Buka palang (manual)', en: 'Open blocker (manual)' },
+  blocker_close_manual:  { id: 'Tutup palang (manual)', en: 'Close blocker (manual)' },
+  blocker_stop_manual:   { id: 'Hentikan palang (manual)', en: 'Stop blocker (manual)' },
   up:                    { id: 'Palang naik', en: 'Blocker up' },
   down:                  { id: 'Palang turun', en: 'Blocker down' },
 
