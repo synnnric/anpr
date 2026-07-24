@@ -1,0 +1,14 @@
+fix(s300): audio-prompt channel path + configurable failure-audio URL
+
+Match the deployed vendor server, verified live at 192.168.50.250:18001:
+- audio-prompt takes the channel in the path: POST /api/v1/device-s300/
+  audio-prompt/{channelNo} (old path without it 404s). Fixed in both the
+  manual S300Controller::audioPrompt and DecisionExecutor::sendBackUpAudio.
+- the WAV URL the device downloads for the FAIL back-up prompt was hardcoded
+  empty; it now comes from setting s300_audio_failure_url, editable in the
+  S300 Settings panel (EN+ID). Seeded in schema.sql + consolidated migration.
+
+Also refresh s300_protocol.txt to the V1.1 (2026-04-02) spec and record the
+audio-prompt test in API TESTING.txt.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>

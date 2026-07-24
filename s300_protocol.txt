@@ -1,0 +1,901 @@
+
+NO：
+	SSRD251030-04305
+VER：
+	V1.1
+Software Interface Communication Protocol
+Maxvision Technology Corp.
+Table of contents
+TOC \o "1-3" \h \u I. Overview PAGEREF _Toc32248 \h 3
+1.1 Connection Instructions PAGEREF _Toc20171 \h 3
+1.2 Communication Specifications PAGEREF _Toc6279 \h 3
+1.3 General Response Format PAGEREF _Toc28902 \h 3
+II. Interfaces provided by S300 (third-party calls) PAGEREF _Toc18565 \h 3
+2.1 Channel Flow Control Interface PAGEREF _Toc23334 \h 3
+2.2 S300 Device Control Interface PAGEREF _Toc25526 \h 6
+2.3 System Settings Interface PAGEREF _Toc8665 \h 8
+2.4 Obtain video playback of the inspection process (two options provided, to be determined) PAGEREF _Toc21609 \h 10
+III. Interfaces that need to be provided by the third party (for S300 users to call) PAGEREF _Toc22656 \h 12
+3.1 Receive working status data PAGEREF _Toc4315 \h 13
+3.2 Receive face capture image data PAGEREF _Toc4634 \h 14
+3.3 Receive the real-time video stream playback address PAGEREF _Toc26335 \h 15
+3.4 The receiving system reset is complete . PAGEREF _Toc6326 \h 17
+3.5 Receive undercarriage scan images PAGEREF _Toc1449 \h 17
+3.6 Receiving X -ray scan images PAGEREF _Toc16026 \h 19
+IV. Flowchart PAGEREF _Toc16095 \h 22
+V. Error Code Explanation PAGEREF _Toc32119 \h 23
+VI. Remarks PAGEREF _Toc362 \h 23
+I. Overview
+1.1 Connection Instructions
+This document describes the HTTP interface interface specifications between third-party systems and the S300 system, covering two aspects:
+direction
+	illustrate
+S300 → Third Party
+	The S300 system proactively pushes the data reported by the S300 device to a third-party platform.
+Third party → S300
+	Third parties can implement process-driven operations and control of S300 devices by calling the S300 system interface.
+1.2 Communication Specifications
+Protocol : HTTP/HTTPS
+Data format : JSON
+Character encoding : UTF-8
+Request method : POST / GET
+Content-Type : application/json
+1.3 General Response Format
+All interfaces provided by the S300 side return a uniform format:
+{  "code" : 200 ,  "message" : "Operation successful "  "data" : {} }
+Fields
+	type
+	illustrate
+code
+	Integer
+	Status codes: 200 indicates success, anything other than 200 indicates failure.
+message
+	String
+	Prompt message
+data
+	Object
+	The returned data and its specific structure are detailed in the respective interface descriptions.
+II. Interfaces provided by S300 (third-party calls)
+2.1 Channel Flow Control Interface
+2.1.1 Start working
+Interface Description : Notifies the S300 system that the vehicle has entered the lane and will begin operation.
+property
+	value
+Request method
+	POST
+Request path
+	/api/v1/channel-s300/come/{channelNo}
+Path parameters
+	channelNo - Channel number (e.g., RJ001 )
+Request body :
+{ "licensePlateNo": "粤B12345" }
+Request parameter description :
+Fields
+	type
+	Required
+	illustrate
+licensePlateNo
+	String
+	yes
+	license plate number
+Response example :
+{ "code": 200, "message": " success ", "data": { "operatingState": 0 , " desc ": " ready state "   } }
+Response field descriptions :
+Fields
+	type
+	Required
+	illustrate
+operatingState
+	int
+	yes
+	Ready state (robotic arm, screen, etc. are in reset state).
+Inspection in progress (vehicle received and inspection begins upon entering the lane)
+Inspection complete, equipment reset in progress (platform issues command).
+The robotic arm has completed its reset.
+Emergency stop of equipment
+Equipment failure
+Equipment self-testing
+Note: The device can only function properly when the operatingState is 0. Any other state indicates a device malfunction and inability to function properly. In such cases, a third party should block vehicle access and trigger an alarm.
+2.1.2 Take another snapshot
+Interface Description : The S300 system captures and uploads images again .
+property
+	value
+Request method
+	POST
+Request path
+	/api/v1/channel-s300/recapture/{channelNo}
+Path parameters
+	channelNo - Channel Number
+Request body : None
+Response example :
+{ "code": 200, "message": " success ", "data": {} }
+2.1.3 Complete the work
+Interface Description : The inspection process is completed, the vehicle is allowed to leave , and the S300 device is notified to reset and prepare for release .
+property
+	value
+Request method
+	GET
+Request path
+	/api/v1/channel-s300/leave/{channelNo}
+Path parameters
+	channelNo - Channel Number
+Request body : None
+Response example :
+{ "code": 200, "message": " success ", "data": {} }
+2.2 S300 Device Control Interface
+After receiving the control command, the S300 system will send it to the corresponding S300 device for execution.
+2.2.1 Read working status
+Interface Description : Triggers the S300 device to actively report its current working status, and the reported data will be pushed to a third-party platform.
+property
+	value
+Request method
+	POST
+Request path
+	/api/v1/device-s300/read-work-status/{channelNo}
+Path parameters
+	channelNo - Channel Number
+Request body : None
+Response example :
+{ "code": 200, "message": " success ", "data": {} }
+2.2.2 Emergency Stop of Equipment
+Interface Description : Emergency stop of all actions of the S300 device on the specified channel.
+property
+	value
+Request method
+	POST
+Request path
+	/api/v1/device-s300/emergency-stop/{channelNo}
+Path parameters
+	channelNo - Channel Number
+Request body : None
+Response example :
+{ "code": 200, "message": " success ", "data": {} }
+2.2.3 Manual Reset
+Interface Description : Manually reset the S300 device to a ready state.
+property
+	value
+Request method
+	POST
+Request path
+	/api/v1/device-s300/manual-reset/{channelNo}
+Path parameters
+	channelNo - Channel Number
+Request body : None
+Response example :
+{ "code": 200, "message": " success ", "data": {} }
+Note: Example use case: After calling the device emergency stop command in section 2.2.2, the device stops working.
+2.2.4 X-check receipt
+Interface Description : The client platform sends out a receipt based on the pushed X-related inspection image .
+property
+	value
+Request method
+	POST
+Request path
+	/x-ray/{channelNo}
+Path parameters
+	channelNo - Channel Number
+Request parameters :
+name
+	type
+	must
+	illustrate
+SN
+	String
+	yes
+	Each system data record has a unique identifier ( corresponding to the serial number used for pushing data ).
+VehicleNumber
+	String
+	yes
+	license plate number
+Result
+	Bool
+	yes
+	Final conclusion: true - pass, false - fail
+Note
+	String
+	no
+	Notes
+Request body :
+{ "SN": "SYS00100120220909000000", "VehicleNumber": "粤B12345", "Result": true, "Note": "Manual review passed" }
+Response parameter description :
+Fields
+	type
+	must
+	describe
+code
+	Integer
+	yes
+	Status code. 200 - Success, other values - Failure.
+data
+	Object
+	yes
+	The response data object, here is {}
+message
+	String
+	yes
+	Message Explanation
+Response Example
+{ "code": 200, "message": " success ", "data": {} }
+2.3 System Settings Interface
+2.3.1 Set notification audio
+Interface Description : The client platform can customize the prompt voice settings. The audio file must be a mono WAV audio file.
+property
+	value
+Request method
+	POST
+Request path
+	/api/v1/device-s300/audio-prompt
+Path parameters
+	
+Request parameters :
+{ "cmdNo": 335, "data": [ { "index": 1, "language": 3, "url": "http://192.168.55.201:8084/download/fileA.wav", "desc": "" }, { "index": 2, "language": 3, "url": "http://192.168.55.201:8084/download/fileB.wav", "desc": "" } ] }
+Request parameter description :
+field name
+	type
+	Required
+	illustrate
+cmdNo
+	Integer
+	yes
+	Command number, fixed value 335
+data
+	List
+	yes
+	Audio file list
+Description of fields in the data array element :
+field name
+	type
+	Required
+	illustrate
+	Example
+index
+	Integer
+	yes
+	Audio index numbers are shown in the audio list below.
+	1
+language
+	Integer
+	yes
+	Language type: 1. Mandarin, 3. English, 4. Arabic
+	3
+URL
+	String
+	yes
+	Download link for audio file (wav format)
+	http://192.168.55.201:8084/download/fileA.wav
+desc
+	String
+	no
+	Audio description
+	-
+Audio Index List
+index
+	Chinese content
+	English content
+1
+	Welcome!
+	Welcome.
+2
+	Please continue driving forward.
+	Please move forward.
+3
+	Please align the driver's side window with the parking spot.
+	Please align the driver's-side window with the parking marker.
+4
+	Under inspection
+	Inspection in progress
+5
+	Inspection complete, thank you for your cooperation.
+	Inspection completed. Thank you for your cooperation
+6
+	Please proceed.
+	Please proceed
+7
+	Please back up if your vehicle has stopped in front of you.
+	Vehicle too far forward. Please reverse.
+8
+	After parking, please drive forward.
+	Vehicle too far back. Please move forward.
+9
+	The vehicle has crossed the line, please move slightly to the left.
+	Vehicle over the line. Please move slightly to the left
+10
+	The vehicle has crossed the line, please move slightly to the right.
+	Vehicle over the line. Please move slightly to the right
+11
+	Please lower your car window.
+	Please lower your window
+12
+	Please face the screen.
+	Please face the screen
+13
+	The vehicle has rolled, the inspection is suspended. Please bring the vehicle to a complete stop and prepare for the inspection to proceed.
+	Vehicle movement detected. Inspection suspended. Please stop to restart
+14
+	The door is open, the inspection is suspended. Please close the door and prepare for the inspection to proceed.
+	Door opened. Inspection suspended. Please close the door to restart
+Response example :
+{ "code": 200, "message": " success ", "data": {} }
+2.4 Obtain video playback of the inspection process (two options provided, to be determined)
+Note: Because the playback stream address generated by the NVR contains a temporary security token, it has an expiration time and cannot be directly configured as "permanently valid". You need to obtain the latest address when viewing the playback. We provide two methods to obtain it:
+Method 1: The S300 provides a video playback interface for third parties to call.
+property
+	value
+Request method
+	POST
+Request path
+	/api/v1/device-s300/video-playback
+Path parameters
+	
+The following NVR parameters need to be configured:
+Jovision NVR Open Platform configuration (customs-core/src/main/resources/application.yml → nvr.jovision):
+Config item
+	Environment variable
+	Required
+	Description
+base-url
+	NVR_JOVISION_BASE_URL
+	yes
+	NVR platform base URL; HTTP default port 9090, HTTPS default port 19090
+app-key
+	NVR_JOVISION_APP_KEY
+	yes
+	Third-party unique credential (Jovision Open Platform app_key)
+app-secret
+	NVR_JOVISION_APP_SECRET
+	yes
+	Third-party credential secret (Jovision Open Platform app_secret)
+Request parameters :
+name
+	type
+	must
+	illustrate
+channelNo
+	String
+	yes
+	Channel number
+startTime
+	String
+	yes
+	Playback start time , format: yyyy-MM-dd'T'HH:mm:ss
+endTime
+	String
+	yes
+	Playback end time , format: yyyy-MM-dd'T'HH:mm:ss
+Request body :
+{ "channelNo": " RJ001", "startTime": "2026-02-03T10:00:00", "endTime": "2026-02-03T10:15:00", }
+Response parameter description :
+Fields
+	type
+	illustrate
+data
+	Array
+	video playback stream addresses , including video playback from six robotic arm cameras.
+data[].code
+	String
+	Camera location codes (z1/z2/z3 / y1 / y2 / y3 , see table below for details)
+data[].url
+	String
+	Video playback stream address
+Explanation of the location code for data[].code :
+code
+	illustrate
+	Remark
+z1
+	The first camera on the left
+	robotic arm position 1
+z2
+	Second camera on the left
+	Robotic arm position 2
+Z 3
+	Third camera on the left
+	robotic arm position 3
+y1
+	The first camera on the right
+	robotic arm position 4
+y2
+	Second camera on the right
+	robotic arm position 5
+y3
+	The third camera on the right
+	robotic arm position 6
+Response Example
+{ "code": 200, "message": " success ", "data": [ { "code": "z1", "url": "rtsp ://192.168.1.1:8080/ video /1 " }, { "code": "z2", "url": "rtsp ://192.168.1.1:8080/ video / 2 " }, { "code": " z3 ", "url": "rtsp ://192.168.1.1:8080/ video / 3 " }, { "code": "y 1 ", "url":"rtsp ://192.168.1.1:8080/ video / 4 " }, { "code": "y2", "url": "rtsp ://192.168.1.1:8080/ video / 5 " }, { "code": "y 3 ", "url": "rtsp ://192.168.1.1:8080/ video / 6 " } ] }
+Method 2:Method 2: Refer to the official nvr documentation for integration (see Fusion Open API. pdf).
+III. Interfaces that need to be provided by the third party (for S300 users to call)
+The S300 system actively calls the following interfaces to push data to a third-party platform.
+Third parties need to implement the corresponding receiving interface according to the following specifications and configure the interface address in the custom parameters of the S300 system .
+Configuration entry : S300 system management backend → Custom parameters (running parameters) → corresponding configuration item
+Configuration Item Key
+	illustrate
+	Corresponding interface chapter
+OVERSEAS_WORK_STATUS_URL
+	Third-party receiving platform working status interface address
+	3.1
+OVERSEAS_FACE_IMAGE_URL
+	Third-party face image receiving interface address
+	3.2
+OVERSEAS_VIDEO_RECORD_URL
+	interface address for receiving real-time video streams
+	3.3
+OVERSEAS_RESET_COMPLETE_URL
+	Third-party receiving system reset completion interface address
+	3.4​
+OVERSEAS_UVIS_URL​​
+	Third-party interface address for receiving undercarriage scan images
+	3.5​
+OVERSEAS_X_RAY_URL
+	Third-party interface address for receiving X-ray scan images
+	3.6​
+OVERSEAS_VIDEO_RECORD_URL
+	Video recording file receiver endpoint
+	3.7
+Note : OVERSEAS_PLATFORM_ENABLED must also be set to true to enable third-party platform integration.
+3.1 Receive working status data
+Interface Description : Receives S300 device operating status data sent by the S300 system.
+property
+	value
+Request method
+	POST
+Request path
+	Third-party custom OVERSEAS_WORK_STATUS_URL
+Default configuration value
+	http://127.0.0.1:8080/overseas/s300/work-status
+The request body sent by the S300 system :
+{ "cmdNo": 322, "channelNo": "CH001", "data": { "operatingState": 0 } }
+Request field description :
+Fields
+	type
+	illustrate
+cmdNo
+	Int
+	Fixed value 322 , indicating working status data.
+channelNo
+	String
+	Channel number
+data
+	Object
+	Working status data
+data.operatingState
+	Int
+	Running status: 0 = normal; see enumeration description for other values.
+operatingState enumeration values :
+value
+	meaning
+	Supplementary Explanation
+0
+	Ready
+	The robotic arm and screen are all in a reset state.
+1
+	Under inspection
+	Upon receiving the start-of-work instruction (corresponding to 2.1.1), the inspection begins.
+2
+	Resetting
+	Upon receiving the work completion instruction (corresponding to 2.1.3) , the device begins to reset.
+3
+	Reset complete
+	The equipment has been reset and vehicles can now pass.
+4
+	Emergency stop of equipment
+	Upon receiving an emergency stop command (corresponding to 2.2.2), the equipment ceases operation.
+5
+	Equipment failure
+	Equipment malfunction, unable to work
+6
+	Equipment self-testing
+	The device performs a self-test to check if its status has returned to normal.
+The third party needs to return :
+{ "code": 200, "message": " success ", "data": {} }
+The S300 system considers a 200 HTTP status code response as a successful reception, and the response body format is not mandatory.
+3.2 Receive face capture image data
+Interface Description : Receives face capture image data from the S300 device pushed by the S300 system.
+property
+	value
+Request method
+	POST
+Request path
+	Third-party custom OVERSEAS_FACE_IMAGE_URL
+Default configuration value
+	http://127.0.0.1:8080/overseas/s300/face-image
+The request body sent by the S300 system :
+{ "cmdNo": 323, "channelNo": "CH001", "data": { "img": [ "http://image-server/face/img_001.jpg", "http://image-server/face/img_002.jpg" ] } }
+Request field description :
+Fields
+	type
+	illustrate
+cmdNo
+	Int
+	Fixed value 323 , identifying face image data.
+channelNo
+	String
+	Channel number
+data
+	Object
+	Facial image data
+data.img
+	Array<String>
+	A list of URLs for captured facial images; each report may contain multiple images.
+The third party needs to return :
+{ "code": 200, "message": " success ", "data": {} }
+3.3 Receive the real-time video stream playback address
+Interface Description : Receives the real-time video stream playback address of the robotic arm pushed by the S300 system .
+property
+	value
+Request method
+	POST
+Request path
+	OVERSEAS_VIDEO_REAL_TIME_URL in the S300 system.
+Default configuration value
+	http://127.0.0.1:8080/overseas/s300/video-real-time
+Triggering timing : After a third party calls the 2.1.1 Start working interface , the S300 system pushes the real-time video stream playback address of the robotic arm to this interface .
+The request body sent by the S300 system :
+{ "cmdNo": 325, "channelNo": " RJ001", "data": [ { "code": "z1", "url": "rtsp ://192.168.1.1:8080/ video /1 " }, { "code": "z2", "url": "rtsp ://192.168.1.1:8080/ video / 2 " }, { "code": " z3 ", "url": "rtsp ://192.168.1.1:8080/ video / 3 " }, { "code": "y 1 ", "url":"rtsp ://192.168.1.1:8080/ video / 4 " }, { "code": "y2", "url": "rtsp ://192.168.1.1:8080/ video / 5 " }, { "code": "y 3 ", "url": "rtsp ://192.168.1.1:8080/ video / 6 " } ] }
+Request field description :
+Fields
+	type
+	illustrate
+cmdNo
+	Int
+	A fixed value of 325 identifies the video recording file data.
+channelNo
+	String
+	Channel number
+licensePlateNo
+	String
+	The license plate number is derived from the data collected during this inspection; if not collected, it is an empty string "".
+data
+	Array
+	The video stream address list contains the video stream addresses of six robotic arm cameras.
+data[].code
+	String
+	Camera location codes (z1/z2/ z3 / y1 / y2 /y3 , see table below for details)
+data[].url
+	String
+	Camera video stream address
+Explanation of the location code for data[].code :
+code
+	illustrate
+	Remark
+z1
+	The first camera on the left
+	robotic arm position 1
+z2
+	Second camera on the left
+	Robotic arm position 2
+Z 3
+	Third camera on the left
+	robotic arm position 3
+y1
+	The first camera on the right
+	robotic arm position 4
+y2
+	Second camera on the right
+	robotic arm position 5
+y3
+	The third camera on the right
+	robotic arm position 6
+The third party needs to return :
+{ "code": 200, "message": " success ", "data": {} }
+The s300 system considers a response with an HTTP status code of 200 as a successful reception, and the response body format is not mandatory.
+3.4 The receiving system reset is complete .
+Interface Description : Receives the S300 system reset completion signal.
+property
+	value
+Request method
+	POST
+Request path
+	OVERSEAS_RESET_COMPLETE_URL in the S300 system.
+Default configuration value
+	http://127.0.0.1:8080/overseas/s300/ reset - complete
+Triggering timing : After the S300 system retracts the robotic arm and allows the vehicle to move, it will notify the customer platform via an interface.
+The request body sent by the S300 system :
+{ "cmdNo": 326 , "channelNo": " RJ001", " data ": null }
+Request field description :
+Fields
+	type
+	illustrate
+cmdNo
+	Integer
+	A fixed value of 350 indicates that the system reset is complete .
+channelNo
+	String
+	Channel number
+data
+	object
+	none
+The third party needs to return :
+{ "code": 200, "message": " success ", "data": {} }
+The s300 system considers a response with an HTTP status code of 200 as a successful reception, and the response body format is not mandatory.
+3.5 Receive undercarriage scan images
+Interface Description: Receives images generated from undercarriage scanning and the results of image inspection and analysis.
+property
+	value
+Request method
+	POST
+Request path
+	configuring OVERSEAS_UVIS_URL in the S300 system .
+Default configuration value
+	http://127.0.0.1:8080/overseas/s300/uvis
+Request parameters
+Top-level field:
+Fields
+	type
+	must
+	describe
+channel
+	String
+	yes
+	Channel number
+params
+	Object
+	yes
+	For the parameter objects to be checked, please see the table below.
+params object fields:
+Fields
+	type
+	must
+	describe
+inspectionId
+	Integer
+	yes
+	Unique ID for verification record
+imageType
+	Integer
+	yes
+	Image type: 0 - Original image of the undercarriage, 1 - Image of the undercarriage with foreign object
+imageData
+	String
+	yes
+	Image Base64 encoded data
+objectCount
+	Integer
+	yes
+	Number of foreign objects
+coords
+	Array
+	no
+	List of coordinates for the foreign object target. `imageType=1` contains data; `imageType=0` is an empty list .
+coords array element field (for each coordinate item):
+Fields
+	type
+	must
+	describe
+conf
+	Float
+	yes
+	Target confidence level (percentage, e.g., 0.76 means 76%)
+x1
+	Integer
+	yes
+	X coordinate of the top left corner of the rectangle
+y1
+	Integer
+	yes
+	Y-coordinate of the top left corner of the rectangle
+x2
+	Integer
+	yes
+	X coordinate of the bottom right corner of the rectangle
+y2
+	Integer
+	yes
+	Y-coordinate of the bottom right corner of the rectangle
+Request Example
+{ "channel": "TD0001", "params": { "inspectionId": 20250624153102, "imageType": 1, "imageData": "base64 string", "objectCount": 1, "coords": [ { "conf": 0.76, "x1": 50, "y1": 100, "x2": 100, "y2": 200 } ] } }
+Response parameters
+Fields
+	type
+	must
+	describe
+code
+	Integer
+	yes
+	Status code. 200 - Success, other values - Failure.
+data
+	Object
+	yes
+	The response data object, here is {}
+message
+	String
+	yes
+	Message Explanation
+Response Example
+{ "code": 200, "message": " success ", "data": {} }
+3.6 Receiving X -ray scan images
+Interface Description: Receives images and judgment results from X-ray machine scans of the vehicle.
+property
+	value
+Request method
+	POST
+Request path
+	OVERSEAS_X_RAY_URL in the S300 system.
+Default configuration value
+	http://127.0.0.1:8080/overseas/s300/ x-ray
+Request parameters
+Top-level field:
+name
+	type
+	must
+	illustrate
+SN
+	String
+	yes
+	Unique ID for system data records
+DateScanStarted
+	String
+	yes
+	Start scan time, format: yyyy-MM-dd HH:mm:ss
+DateScanEnded
+	String
+	yes
+	End scan time, format: yyyy-MM-dd HH:mm:ss
+VehicleNumber
+	String
+	yes
+	License plate number
+ScannedImage
+	String(Base64)
+	yes
+	Scanned vehicle image (JPG format, Base64 encoded)
+PlateImage
+	String(Base64)
+	no
+	License plate capture image (JPG format, Base64 encoded)
+IsAnomaly
+	Bool
+	yes
+	Intelligent prediction of anomalies: true - anomaly, false - normal.
+AnomalyComments
+	String
+	no
+	Abnormal Remarks
+ScannerOperator
+	String
+	no
+	Operator's name
+AlarmInfo
+	Array
+	no
+	The list of intelligent early warning information is shown in the table below.
+AlarmInfo array element fields:
+name
+	type
+	must
+	illustrate
+Confidence
+	Number
+	no
+	Confidence level (e.g., 0.98 means 98%)
+Region
+	Object
+	no
+	The targets in the warning area are detailed in the table below.
+Comments
+	String
+	no
+	Warning description (e.g., "similar to a firearm" )
+Region object fields:
+name
+	type
+	must
+	illustrate
+x
+	Number
+	no
+	X coordinate of the upper left corner of the warning area
+y
+	Number
+	no
+	Y-coordinate of the upper left corner of the warning area
+Width
+	Number
+	no
+	Warning area width
+Height
+	Number
+	no
+	Warning area height
+Request Example
+{ "SN": "SYS00100120220909000000", "DateScanStarted": "2022-09-09 00:00:00", "DateScanEnded": "2022-09-09 00:01:00", "VehicleNumber": "粤B12345", "ScanedImage": "<Base64 encoded JPG image>", "PlateImage": "<Base64 encoded JPG image>", "IsAnomaly": true, "AnomalyComments": "Suspected dangerous item found", "ScannerOperator": "张三", "AlarmInfo": [ { "Confidence": 0.98, "Region": { "x": 10, "y": 30, "Width": 100, "Height": 100 }, "Comments": "Similar to a firearm" }, { "Confidence": 0.2, "Region": { "x": 80, "y": 90, "Width": 100, "Height": 100 }, "Comments": "Similar to knives" } ] }
+Response parameters :
+Fields
+	type
+	must
+	describe
+code
+	Integer
+	yes
+	Status code. 200 - Success, other values - Failure.
+data
+	Object
+	yes
+	The response data object, here is {}
+message
+	String
+	yes
+	Message Explanation
+Response Example
+{ "code": 200, "message": " success ", "data": {} }
+3.7 Receive Video Recording Files
+Description: Receives complete video recording data for the current inspection pushed by the s300 system. After receiving the “Complete Work” notification (/channel/http/leave), the s300 system saves the recordings from all six robotic arm cameras (covering the period from start time to end time) and pushes the file URLs to the third-party for archiving.
+Property
+	Value
+Method
+	POST
+Path
+	Third-party defined; configure as OVERSEAS_VIDEO_RECORD_URL
+Default
+	http://127.0.0.1:8080/overseas/s300/video-record
+Trigger: After the third-party calls POST /channel/http/leave/{channelNo}, the s300 system finishes saving the recordings and actively pushes to this interface.
+Request Body sent by s300:
+{  "channelNo": "RJ001",  "licensePlateNo": "粤B12345",  "startTime": "2026-02-03T10:00:00",  "endTime": "2026-02-03T10:15:00",  "data": [    {      "code": "z1",      "url": "http://192.168.1.100:8080/recordings/RJ001_z1_20260203100000.mp4"    },    {      "code": "z2",      "url": "http://192.168.1.100:8080/recordings/RJ001_z2_20260203100000.mp4"    },    {      "code": "y1",      "url": "http://192.168.1.100:8080/recordings/RJ001_y1_20260203100000.mp4"    },    {      "code": "y2",      "url": "http://192.168.1.100:8080/recordings/RJ001_y2_20260203100000.mp4"    },    {      "code": "z3",      "url": "http://192.168.1.100:8080/recordings/RJ001_z3_20260203100000.mp4"    },    {      "code": "y3",      "url": "http://192.168.1.100:8080/recordings/RJ001_y3_20260203100000.mp4"    }  ]}
+Request Fields:
+Field
+	Type
+	Description
+channelNo
+	String
+	Channel number
+licensePlateNo
+	String
+	License plate number from this inspection’s collected data; empty string "" if not collected
+startTime
+	String
+	Inspection start time (time when “Start Work” was called), format yyyy-MM-dd'T'HH:mm:ss
+endTime
+	String
+	Inspection end time (time when “Complete Work” was called), format yyyy-MM-dd'T'HH:mm:ss
+data
+	Array
+	Recording list containing files from all six robotic arm cameras
+data[].code
+	String
+	Camera position code (z1/z2/y1/y2/z3/y3, see table below)
+data[].url
+	String
+	Video recording file download URL (HTTP); empty string "" if recording failed
+data[].code Position Codes:
+Code
+	Description
+	Note
+z1
+	The first camera on the left
+	robotic arm position 1
+z2
+	Second camera on the left
+	Robotic arm position 2
+Z 3
+	Third camera on the left
+	robotic arm position 3
+y1
+	The first camera on the right
+	robotic arm position 4
+y2
+	Second camera on the right
+	robotic arm position 5
+y3
+	The third camera on the right
+	robotic arm position 6
+Notes: - After each inspection, exactly 6 recording files are pushed. If a camera recording fails, the corresponding url will be an empty string "". - File naming convention: {channelNo}_{code}_{startTime yyyyMMddHHmmss}.mp4. - The third-party should download and save the files promptly. The s300 system only retains recent recordings and does not guarantee long-term storage.
+Third-party must return:
+{ "code": 200, "message": " success ", "data": {} }
+The s300 system considers the push successful when the HTTP response status code is 200. The response body format is not strictly required.
+IV. Flowchart
+V. Error Code Explanation
+code
+	meaning
+	Handling suggestions
+200
+	success
+	-
+400
+	Incorrect request parameters
+	Check the request body format and required fields.
+500
+	Internal server error
+	Contact S300 technical support
+VI. Remarks
+Protocol: http
+Capture Process: Our robotic arm performs face capture and deduplication. A single robotic arm sends only one or two images, ensuring that the number of captured images pushed to the customer at one time is not too large. The customer will then actively call the interface to continue capturing images, and the robotic arm will restart the capture push.
+VIP vehicles : Users can choose not to send start-of-work information and do not need to undergo S300 system verification.
+

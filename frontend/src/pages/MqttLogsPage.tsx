@@ -1,0 +1,512 @@
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Radio, RefreshCw, ArrowDownToLine, ArrowUpFromLine, ChevronRight,
+  ChevronDown, ChevronLeft, Cpu, Activity, AlertTriangle, CheckCircle, Clock, Car, X,
+  Loader2,
+} from 'lucide-react';
+import {
+  listMqttDevices, listMqttInbound, listMqttOutbound, listMqttMessageNames, clearMqttQueue,
+  type MqttDevice, type MqttInboundRow, type MqttOutboundRow, type MqttLogFilters,
+  type MqttMessageNames,
+} from '../services/mqttLogService';
+import { parsePgTs, fmtPgTs } from '../utils/helpers';
+import { useI18n } from '../contexts/I18nContext';
+
+/** One unified row — inbound and outbound merged into a single feed. */
+interface MergedRow {
+  key: string;
+  dir: 'in' | 'out';
+  ts: string | null;
+  device_sn: string;
+  message_name: string;
+  plate: string | null;
+  topic?: string;
+  status?: 'pending' | 'sent' | 'failed';
+  attempts?: number;
+  last_error?: string | null;
+  payload: unknown;
+}
+
+export default function MqttLogsPage() {
+  const { t } = useI18n();
+  const [devices, setDevices] = useState<MqttDevice[]>([]);
+
+  const [deviceFilter, setDeviceFilter] = useState<string>('');
+  const [nameFilter, setNameFilter] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [plateFilter, setPlateFilter] = useState<string>('');
+  const [plateInput, setPlateInput] = useState<string>('');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
+
+  const [inboundRows, setInboundRows] = useState<MqttInboundRow[]>([]);
+  const [inboundTotal, setInboundTotal] = useState(0);
+  const [outboundRows, setOutboundRows] = useState<MqttOutboundRow[]>([]);
+  const [outboundTotal, setOutboundTotal] = useState(0);
+  const [messageNames, setMessageNames] = useState<MqttMessageNames>({ inbound: [], outbound: [], all: [] });
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  const [resetMsg, setResetMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const filters: MqttLogFilters = useMemo(() => ({
+    device_sn:     deviceFilter || undefined,
+    message_name:  nameFilter || undefined,
+    status:        statusFilter || undefined,   // ignored by the inbound endpoint
+    license_plate: plateFilter || undefined,
+    limit:         pageSize,
+    offset:        page * pageSize,
+  }), [deviceFilter, nameFilter, statusFilter, plateFilter, page, pageSize]);
+
+  // Any filter change restarts from the first page.
+  useEffect(() => { setPage(0); }, [deviceFilter, nameFilter, statusFilter, plateFilter, pageSize]);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [devs, inb, out] = await Promise.all([
+        listMqttDevices(),
+        listMqttInbound(filters),
+        listMqttOutbound(filters),
+      ]);
+      setDevices(devs);
+      setInboundRows(inb.items);
+      setInboundTotal(inb.total);
+      setOutboundRows(out.items);
+      setOutboundTotal(out.total);
+    } catch {
+      // swallow
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
+
+  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const tm = setInterval(reload, 5000);
+    return () => clearInterval(tm);
+  }, [reload, autoRefresh]);
+
+  useEffect(() => {
+    listMqttMessageNames().then(setMessageNames).catch(() => undefined);
+    const tm = setInterval(() => {
+      listMqttMessageNames().then(setMessageNames).catch(() => undefined);
+    }, 60_000);
+    return () => clearInterval(tm);
+  }, []);
+
+  // Merge inbound + outbound into one feed, newest first.
+  const mergedRows = useMemo<MergedRow[]>(() => {
+    const ins: MergedRow[] = inboundRows.map(r => ({
+      key: `in-${r.id}`, dir: 'in', ts: r.received_at,
+      device_sn: r.device_sn, message_name: r.message_name,
+      plate: r.license_plate || null, topic: r.topic, payload: r.payload,
+    }));
+    const outs: MergedRow[] = outboundRows.map(r => ({
+      key: `out-${r.id}`, dir: 'out', ts: r.created_at,
+      device_sn: r.device_sn, message_name: r.message_name,
+      plate: extractOutboundPlate(r.payload), payload: r.payload,
+      status: r.status, attempts: r.attempts, last_error: r.last_error,
+    }));
+    return [...ins, ...outs].sort((a, b) =>
+      (parsePgTs(b.ts)?.getTime() ?? 0) - (parsePgTs(a.ts)?.getTime() ?? 0));
+  }, [inboundRows, outboundRows]);
+
+  const [clearingQueue, setClearingQueue] = useState(false);
+  const handleClearQueue = async () => {
+    setClearingQueue(true);
+    setResetMsg(null);
+    try {
+      const r = await clearMqttQueue('pending');
+      setResetMsg({ ok: true, text: t('mqtt_logs.queue.cleared', { n: String(r.deleted) }) });
+      reload();
+    } catch (err) {
+      setResetMsg({ ok: false, text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setClearingQueue(false);
+    }
+  };
+
+  const toggle = (key: string) => setExpanded(e => ({ ...e, [key]: !e[key] }));
+  const applyPlate = () => setPlateFilter(plateInput.trim());
+  const clearPlate = () => { setPlateInput(''); setPlateFilter(''); };
+  const filterToPlate = (p: string) => { setPlateInput(p); setPlateFilter(p); };
+
+  return (
+    <div className="h-full flex flex-col bg-bg overflow-hidden">
+      <header className="bg-surface border-b border-border px-6 py-4 shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+              <Radio className="w-5 h-5 text-primary" /> {t('mqtt_logs.title')}
+            </h1>
+            <p className="text-xs text-text-secondary mt-0.5">
+              {t('mqtt_logs.subtitle')}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none">
+              <input type="checkbox" checked={autoRefresh}
+                onChange={e => setAutoRefresh(e.target.checked)}
+                className="w-3.5 h-3.5" />
+              {t('mqtt_logs.auto_refresh')}
+            </label>
+            <button onClick={reload} disabled={loading}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary border border-border rounded-md">
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> {t('common.refresh')}
+            </button>
+            <button onClick={handleClearQueue} disabled={clearingQueue}
+              title={t('mqtt_logs.queue.clear_hint')}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs text-warning hover:bg-warning/10 border border-warning/40 rounded-md disabled:opacity-50">
+              {clearingQueue ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpFromLine className="w-3.5 h-3.5" />}
+              {t('mqtt_logs.queue.clear_btn')}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {resetMsg && (
+        <div className={`px-6 py-2 text-xs border-b ${
+          resetMsg.ok ? 'bg-success/10 text-success border-success/30' : 'bg-danger/10 text-danger border-danger/30'
+        }`}>
+          {resetMsg.text}
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Cpu className="w-4 h-4 text-text-secondary" />
+            <h2 className="text-sm font-semibold text-text-primary">{t('mqtt_logs.section.devices')}</h2>
+            <span className="text-xs text-text-secondary">({devices.length})</span>
+          </div>
+          {devices.length === 0 ? (
+            <div className="bg-surface border border-border rounded-lg p-6 text-center text-sm text-text-secondary">
+              {t('mqtt_logs.no_activity')}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {devices.map(d => (
+                <DeviceCard
+                  key={d.device_sn}
+                  device={d}
+                  selected={deviceFilter === d.device_sn}
+                  onSelect={() => setDeviceFilter(prev => prev === d.device_sn ? '' : d.device_sn)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-surface border border-border rounded-lg p-3">
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="flex items-center gap-3 text-xs text-text-secondary mr-1" title={t('mqtt_logs.totals')}>
+              <span className="flex items-center gap-1"><ArrowDownToLine className="w-3.5 h-3.5 text-blue-300" /> {inboundTotal.toLocaleString()}</span>
+              <span className="flex items-center gap-1"><ArrowUpFromLine className="w-3.5 h-3.5 text-emerald-300" /> {outboundTotal.toLocaleString()}</span>
+            </div>
+            <div className="h-6 w-px bg-border mx-1" />
+            <select value={deviceFilter} onChange={e => setDeviceFilter(e.target.value)}
+              className="bg-surface-dark border border-border rounded-md px-2 py-1.5 text-xs text-text-primary">
+              <option value="">{t('mqtt_logs.filter.all_devices')}</option>
+              {devices.map(d => (
+                <option key={d.device_sn} value={d.device_sn}>
+                  {d.channel?.channel_no ? `${d.channel.channel_no} — ` : ''}{d.device_sn}
+                </option>
+              ))}
+            </select>
+            <select value={nameFilter} onChange={e => setNameFilter(e.target.value)}
+              className="bg-surface-dark border border-border rounded-md px-2 py-1.5 text-xs text-text-primary">
+              <option value="">{t('mqtt_logs.filter.all_messages')}</option>
+              {messageNames.all.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+              className="bg-surface-dark border border-border rounded-md px-2 py-1.5 text-xs text-text-primary"
+              title={t('mqtt_logs.filter.status_outbound_only')}>
+              <option value="">{t('mqtt_logs.filter.all_statuses')}</option>
+              <option value="pending">{t('mqtt_logs.filter.pending')}</option>
+              <option value="sent">{t('mqtt_logs.filter.sent')}</option>
+              <option value="failed">{t('mqtt_logs.filter.failed')}</option>
+            </select>
+            <div className="flex items-center gap-1 bg-surface-dark border border-border rounded-md px-2 py-0.5">
+              <Car className="w-3.5 h-3.5 text-text-secondary" />
+              <input value={plateInput}
+                onChange={e => setPlateInput(e.target.value.toUpperCase())}
+                onKeyDown={e => { if (e.key === 'Enter') applyPlate(); }}
+                onBlur={applyPlate}
+                placeholder={t('mqtt_logs.filter.plate_ph')}
+                className="bg-transparent w-36 text-xs text-text-primary focus:outline-none placeholder:text-text-secondary/60" />
+              {plateFilter && (
+                <button onClick={clearPlate} className="text-text-secondary hover:text-text-primary">
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+            {(deviceFilter || nameFilter || statusFilter || plateFilter) && (
+              <button onClick={() => { setDeviceFilter(''); setNameFilter(''); setStatusFilter(''); clearPlate(); }}
+                className="text-xs text-text-secondary hover:text-text-primary px-2 py-1">
+                {t('mqtt_logs.filter.clear')}
+              </button>
+            )}
+          </div>
+          {plateFilter && (
+            <div className="mt-2 text-[11px] text-primary flex items-center gap-1.5">
+              <Car className="w-3 h-3" /> {t('mqtt_logs.filter.plate_active')} <span className="font-mono font-semibold">{plateFilter}</span>
+              <span className="text-text-secondary">{t('mqtt_logs.filter.plate_active_covers')}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-surface border border-border rounded-lg overflow-hidden">
+          <MergedTable rows={mergedRows} expanded={expanded} onToggle={toggle} onPlateClick={filterToPlate} />
+          {(() => {
+            // Both directions page in lockstep; keep paging until the larger one runs out.
+            const maxPage = Math.max(1, Math.ceil(Math.max(inboundTotal, outboundTotal) / pageSize));
+            return (
+              <div className="flex items-center justify-between px-3 py-2 border-t border-border text-xs">
+                <span className="text-text-secondary">{t('mqtt_logs.page.info', { p: page + 1, m: maxPage })}</span>
+                <div className="flex items-center gap-2">
+                  <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
+                    className="bg-surface-dark border border-border rounded-md px-2 py-1 text-xs text-text-primary">
+                    {[25, 50, 100, 200].map(n => <option key={n} value={n}>{n} {t('mqtt_logs.page.size')}</option>)}
+                  </select>
+                  <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0 || loading}
+                    className="flex items-center gap-1 px-2.5 py-1 border border-border rounded-md text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed">
+                    <ChevronLeft className="w-3.5 h-3.5" /> {t('mqtt_logs.page.prev')}
+                  </button>
+                  <button onClick={() => setPage(p => p + 1)} disabled={page + 1 >= maxPage || loading}
+                    className="flex items-center gap-1 px-2.5 py-1 border border-border rounded-md text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed">
+                    {t('mqtt_logs.page.next')} <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+
+function DeviceCard({ device, selected, onSelect }: {
+  device: MqttDevice; selected: boolean; onSelect: () => void;
+}) {
+  const { t } = useI18n();
+  const lastIn = parsePgTs(device.last_inbound_at);
+  const lastOut = parsePgTs(device.last_outbound_at);
+  const latest = [lastIn, lastOut].filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0];
+  const idleMs = latest ? Date.now() - latest.getTime() : null;
+  const idleLabel = idleMs === null ? '—'
+    : idleMs < 60_000 ? t('mqtt_logs.ago.s', { n: Math.floor(idleMs / 1000) })
+    : idleMs < 3_600_000 ? t('mqtt_logs.ago.m', { n: Math.floor(idleMs / 60_000) })
+    : idleMs < 86_400_000 ? t('mqtt_logs.ago.h', { n: Math.floor(idleMs / 3_600_000) })
+    : t('mqtt_logs.ago.d', { n: Math.floor(idleMs / 86_400_000) });
+  const isHealthy = idleMs !== null && idleMs < 30_000;
+
+  return (
+    <button onClick={onSelect}
+      className={`text-left bg-surface border rounded-lg p-3 transition-all ${
+        selected ? 'border-primary ring-1 ring-primary/40' : 'border-border hover:border-border-light'
+      }`}>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            {isHealthy
+              ? <CheckCircle className="w-3.5 h-3.5 text-success shrink-0" />
+              : <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0" />}
+            <span className="text-xs font-mono font-semibold text-text-primary truncate" title={device.device_sn}>
+              {device.device_sn}
+            </span>
+          </div>
+          {device.channel && (
+            <div className="text-[10px] text-text-secondary mt-0.5 truncate">
+              {device.channel.channel_no}{device.channel.name ? ` · ${device.channel.name}` : ''}
+            </div>
+          )}
+        </div>
+        <span className="text-[10px] text-text-secondary flex items-center gap-0.5 shrink-0">
+          <Clock className="w-3 h-3" /> {idleLabel}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <Stat icon={ArrowDownToLine} label={t('mqtt_logs.device.inbound')} value={device.inbound_total} color="text-blue-300" />
+        <Stat icon={ArrowUpFromLine} label={t('mqtt_logs.device.outbound')} value={device.outbound_total} color="text-emerald-300" />
+      </div>
+      {(device.outbound_pending > 0 || device.outbound_failed > 0) && (
+        <div className="text-[10px] text-text-secondary mb-2">
+          {device.outbound_pending > 0 && <span className="text-amber-300 mr-2">{t('mqtt_logs.device.pending')} {device.outbound_pending}</span>}
+          {device.outbound_failed > 0 && <span className="text-danger">{t('mqtt_logs.device.failed')} {device.outbound_failed}</span>}
+        </div>
+      )}
+      {device.inbound_breakdown.length > 0 && (
+        <div className="flex flex-wrap gap-1 pt-2 border-t border-border">
+          {device.inbound_breakdown.map(b => (
+            <span key={b.message_name}
+              className="text-[10px] bg-surface-dark border border-border rounded px-1.5 py-0.5 text-text-secondary">
+              {b.message_name} <span className="text-text-primary">{b.c}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </button>
+  );
+}
+
+function Stat({ icon: Icon, label, value, color }: {
+  icon: typeof Activity; label: string; value: number; color: string;
+}) {
+  return (
+    <div className="bg-surface-dark border border-border rounded px-2 py-1.5">
+      <div className="flex items-center gap-1 text-[10px] text-text-secondary">
+        <Icon className="w-3 h-3" /> {label}
+      </div>
+      <div className={`text-sm font-semibold ${color}`}>{value.toLocaleString()}</div>
+    </div>
+  );
+}
+
+function extractOutboundPlate(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const p = payload as Record<string, unknown>;
+  if (typeof p.plate === 'string') return p.plate;
+  const recs = p.dldb_rec;
+  if (Array.isArray(recs)) {
+    const plates = recs
+      .map(r => (r && typeof r === 'object' && typeof (r as Record<string, unknown>).plate === 'string'
+        ? (r as Record<string, string>).plate : null))
+      .filter((x): x is string => !!x);
+    if (plates.length === 1) return plates[0];
+    if (plates.length > 1) return plates.join(', ');
+  } else if (recs && typeof recs === 'object' && typeof (recs as Record<string, unknown>).plate === 'string') {
+    return (recs as Record<string, string>).plate;
+  }
+  return null;
+}
+
+function MergedTable({ rows, expanded, onToggle, onPlateClick }: {
+  rows: MergedRow[]; expanded: Record<string, boolean>;
+  onToggle: (k: string) => void; onPlateClick: (p: string) => void;
+}) {
+  const { t } = useI18n();
+  if (rows.length === 0) {
+    return <div className="p-6 text-center text-sm text-text-secondary">{t('mqtt_logs.empty.all')}</div>;
+  }
+  return (
+    <table className="w-full text-xs">
+      <thead className="bg-surface-dark border-b border-border">
+        <tr>
+          <th className="text-left p-2 w-8"></th>
+          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.time')}</th>
+          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.direction')}</th>
+          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.device_sn')}</th>
+          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.message')}</th>
+          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.plate')}</th>
+          <th className="text-left p-2 text-text-secondary font-medium">{t('mqtt_logs.col.status')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(r => {
+          const open = !!expanded[r.key];
+          return (
+            <Fragment key={r.key}>
+              <tr className="border-b border-border hover:bg-surface-dark cursor-pointer"
+                onClick={() => onToggle(r.key)}>
+                <td className="p-2 text-text-secondary">
+                  {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                </td>
+                <td className="p-2 text-text-secondary font-mono whitespace-nowrap">{fmtPgTs(r.ts)}</td>
+                <td className="p-2"><DirPill dir={r.dir} /></td>
+                <td className="p-2 text-text-primary font-mono truncate max-w-[180px]" title={r.device_sn}>{r.device_sn}</td>
+                <td className="p-2"><MsgPill name={r.message_name} /></td>
+                <td className="p-2">
+                  {r.plate ? <PlateChip plate={r.plate} onClick={onPlateClick} /> : <span className="text-text-secondary/40">—</span>}
+                </td>
+                <td className="p-2">
+                  {r.dir === 'out' && r.status ? <StatusPill status={r.status} /> : <span className="text-text-secondary/40">—</span>}
+                </td>
+              </tr>
+              {open && (
+                <tr className="border-b border-border bg-bg">
+                  <td colSpan={7} className="p-3">
+                    {r.dir === 'in' && r.topic && (
+                      <div className="mb-2 text-[11px] text-text-secondary font-mono break-all">
+                        {t('mqtt_logs.col.topic')}: {r.topic}
+                      </div>
+                    )}
+                    {r.dir === 'out' && r.last_error && (
+                      <div className="mb-2 text-[11px] text-danger bg-danger/10 border border-danger/30 rounded p-2">
+                        <span className="font-semibold">{t('mqtt_logs.last_error')}</span> {r.last_error}
+                      </div>
+                    )}
+                    {r.dir === 'out' && typeof r.attempts === 'number' && (
+                      <div className="mb-2 text-[11px] text-text-secondary">
+                        {t('mqtt_logs.col.attempts')}: {r.attempts}
+                      </div>
+                    )}
+                    <pre className="text-[10px] text-text-secondary whitespace-pre-wrap break-all max-h-72 overflow-y-auto bg-surface-dark p-2 rounded border border-border">
+                      {JSON.stringify(r.payload, null, 2)}
+                    </pre>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function DirPill({ dir }: { dir: 'in' | 'out' }) {
+  return dir === 'in' ? (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-blue-500/15 text-blue-300 border-blue-500/30">
+      <ArrowDownToLine className="w-3 h-3" /> IN
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-emerald-500/15 text-emerald-300 border-emerald-500/30">
+      <ArrowUpFromLine className="w-3 h-3" /> OUT
+    </span>
+  );
+}
+
+function PlateChip({ plate, onClick }: { plate: string; onClick: (p: string) => void }) {
+  const { t } = useI18n();
+  const first = plate.split(',')[0].trim();
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(first); }}
+      title={t('mqtt_logs.plate_filter_title', { p: first })}
+      className="inline-block text-[11px] font-mono px-1.5 py-0.5 rounded border bg-primary/10 text-primary border-primary/40 hover:bg-primary/20">
+      {plate}
+    </button>
+  );
+}
+
+function MsgPill({ name }: { name: string }) {
+  const cls = name === 'ivs_result' ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+    : name === 'keep_alive' ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+    : name === 'white_list_operator' ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+    : name === 'gpio_in' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+    : name === 'gpio_out' ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+    : 'bg-surface-dark text-text-primary border-border';
+  return (
+    <span className={`inline-block text-[10px] font-mono px-1.5 py-0.5 rounded border ${cls}`}>
+      {name}
+    </span>
+  );
+}
+
+function StatusPill({ status }: { status: 'pending' | 'sent' | 'failed' }) {
+  const cls = status === 'sent' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+    : status === 'pending' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+    : 'bg-danger/15 text-danger border-danger/30';
+  return (
+    <span className={`inline-block text-[10px] font-mono px-1.5 py-0.5 rounded border ${cls}`}>
+      {status}
+    </span>
+  );
+}

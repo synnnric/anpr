@@ -1,0 +1,109 @@
+COME
+POST http://192.168.50.250:18001/api/v1/channel-s300/come/RJ001
+request:
+{"licensePlateNo": "B12345"}
+response:
+{
+  "success" : true,
+  "message" : "success",
+  "result" : {
+    "operatingState" : 0,
+    "desc" : "就绪状态"
+  },
+  "error" : null
+}
+
+CAPTURE
+POST http://192.168.50.250:18001/api/v1/channel-s300/recapture/RJ001
+request:
+{}
+response:
+{
+    "code": 200,
+    "message": "success",
+    "data": {}
+}
+
+LEAVE
+POST http://192.168.50.250:18001/api/v1/channel-s300/leave/RJ001
+request:
+{}
+response:
+{
+    "code": 200,
+    "message": "success",
+    "data": {}
+}
+
+READ WORKING STATUS
+POST http://192.168.50.250:18001/api/v1/device-s300/read-work-status/RJ001
+request:
+{}
+response:
+{
+    "code": 200,
+    "message": "success",
+    "data": {}
+}
+
+EMERGENCY STOP
+POST http://192.168.50.250:18001/api/v1/device-s300/emergency-stop/RJ001
+request:
+{}
+response:
+{
+    "code": 200,
+    "message": "success",
+    "data": {}
+}
+
+MANUAL RESET
+POST http://192.168.50.250:18001/api/v1/device-s300/manual-reset/RJ001
+request:
+{}
+response:
+{
+    "code": 200,
+    "message": "success",
+    "data": {}
+}
+
+X-RAY
+CHECK RECEIPT
+POST http://192.168.50.250:18001/x-ray/RJ001
+request:
+{"SN": "SYS00100120220909000000", "VehicleNumber": "粤 B12345", "Result": true, "Note": "Manual review passed"
+}
+response:
+{
+    "code": 502,
+    "message": "HTTP 调用失败: http://127.0.0.1:19090/mock/vendor/check-result",
+    "data": {}
+}
+
+NOTIFICATION AUDIO
+POST http://192.168.50.250:18001/api/v1/device-s300/audio-prompt/RJ001
+request:
+{ 
+"cmdNo": 335, 
+"data": [ 
+{ 
+"index": 1, 
+"language": 3, 
+"url": "http://192.168.50.148/anpr_backend/uploads/audio/stopforcheck.wav", 
+"desc": "" 
+}, 
+{ 
+"index": 2, 
+"language": 3, 
+"url": "http://192.168.50.148/anpr_backend/uploads/audio/stopforcheck.wav", 
+"desc": "" 
+} 
+] 
+}
+response:
+{
+    "code": 500,
+    "message": "设备未连接: A2025062702552000001",
+    "data": null
+}

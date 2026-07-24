@@ -1,0 +1,32 @@
+0000000000000000000000000000000000000000 51cb1385463da841f7e2bf0077f181c0cee3e989 synnnq <rcc628@gmail.com> 1779702811 +0700	commit (initial): Initial commit: ANPR platform (frontend, worker, docs, schema)
+51cb1385463da841f7e2bf0077f181c0cee3e989 2a7a46f85523cadef48f1f96dd14bd1e2acb59f3 synnnq <rcc628@gmail.com> 1779707555 +0700	commit: Import backend + switch frontend auth to SSO
+2a7a46f85523cadef48f1f96dd14bd1e2acb59f3 6523eb9ec2b5a79889c31e7bd68615680741a3df synnnq <rcc628@gmail.com> 1779708682 +0700	commit: Wire audit logging across manual-config endpoints + add UI
+6523eb9ec2b5a79889c31e7bd68615680741a3df 95f989cdc073930e4c5763f21c451cafe3e9ce86 synnnq <rcc628@gmail.com> 1779708705 +0700	commit: backend: audit log infrastructure (schema + log call sites + filters)
+95f989cdc073930e4c5763f21c451cafe3e9ce86 4a1c14da10e9cd6b5e86b795013237b88aefaa94 synnnq <rcc628@gmail.com> 1779709255 +0700	commit: Sync docs with SSO + audit-log changes; add DEV_LOGIN guide (ID + EN)
+4a1c14da10e9cd6b5e86b795013237b88aefaa94 eeac1325ef588f30b1cb114d6be9f3967bb5b789 synnnq <rcc628@gmail.com> 1781176069 +0700	commit: Testing aids + hardware-owned blocker close + whitelist schema fix
+eeac1325ef588f30b1cb114d6be9f3967bb5b789 2069b7c0815b9052140d7637b3b061b844465630 synnnq <rcc628@gmail.com> 1781177977 +0700	commit: docs: per-device debug guide (EN+ID) + fix road blocker protocol (TCP->HTTP)
+2069b7c0815b9052140d7637b3b061b844465630 c58e82ad62e1c4b5ff40bf82c0e5fdcbb476f33e synnnq <rcc628@gmail.com> 1781262698 +0700	commit: docs: make device debug guide AlmaLinux-first (prod), Windows as dev
+c58e82ad62e1c4b5ff40bf82c0e5fdcbb476f33e 78a4b99fcca953e2a2419eda4c48811c97a57da8 synnnq <rcc628@gmail.com> 1782291048 +0700	commit: worker: self-healing threads + watchdog so it can't zombie silently
+78a4b99fcca953e2a2419eda4c48811c97a57da8 1f16cbc13b68f88f4b680194cc2980d76d4810db synnnq <rcc628@gmail.com> 1782291894 +0700	commit: backend: surface health timestamps in GMT+7 (Asia/Jakarta)
+1f16cbc13b68f88f4b680194cc2980d76d4810db 34388492cac944050e1423692631d90fa196e956 synnnq <rcc628@gmail.com> 1782292309 +0700	commit: frontend: placeholder fallback for missing face/UVIS images
+34388492cac944050e1423692631d90fa196e956 b30248e92ff5aaa53700cd8ea11fd9a05e3c3403 synnnq <rcc628@gmail.com> 1782293420 +0700	commit: frontend: photographic dummy images for empty face/UVIS slots
+b30248e92ff5aaa53700cd8ea11fd9a05e3c3403 4958b99f0e29325157668dee4ee7b9bd7b19f11a synnnq <rcc628@gmail.com> 1782297679 +0700	commit: feat: manual approve/reject for SUSPECT inspections (+ RTSP/UVIS visuals)
+4958b99f0e29325157668dee4ee7b9bd7b19f11a 996abcd5b2a4d4aaeaa0ea1e2a98eb389f5cbab4 synnnq <rcc628@gmail.com> 1782320214 +0700	commit: feat: open entry ANPR camera gate via gpio_out on allow verdict
+996abcd5b2a4d4aaeaa0ea1e2a98eb389f5cbab4 bc539434fb0c91b6fd5556dc53cd297d4a52c9ef synnnq <rcc628@gmail.com> 1782320214 +0700	commit: worker: handle {sn}/device/... topic layout for real cameras
+bc539434fb0c91b6fd5556dc53cd297d4a52c9ef 13b74d829424010d973d41bf7722c52268a68b0f synnnq <rcc628@gmail.com> 1782320214 +0700	commit: frontend: auto-popup review queue for suspect inspections
+13b74d829424010d973d41bf7722c52268a68b0f b8b438ca2a7334cebe15bde6df464bd8f4e38292 synnnq <rcc628@gmail.com> 1782337541 +0700	commit: feat: vehicle snapshot images on inspection detail
+b8b438ca2a7334cebe15bde6df464bd8f4e38292 86b5e244750c45a47277e653a194c3e97dd9771e synnnq <rcc628@gmail.com> 1782337541 +0700	commit: feat: open ANPR entry gate at /come (pre-inspection)
+86b5e244750c45a47277e653a194c3e97dd9771e 9467107dfba335cfd28882c701e9627f9ee2398a synnnq <rcc628@gmail.com> 1782337542 +0700	commit: feat: merged MQTT log feed + audit action labels
+9467107dfba335cfd28882c701e9627f9ee2398a a1139f55c76c32350fbff0c9fcaa4aeaae83c163 synnnq <rcc628@gmail.com> 1782337542 +0700	commit: fix: frontend subscribes/publishes both MQTT topic layouts + default creds
+a1139f55c76c32350fbff0c9fcaa4aeaae83c163 0dba44c9b741217127db87a60053684803280903 synnnq <rcc628@gmail.com> 1782337542 +0700	commit: docs: sync with vehicle images, entry gate, merged log, MQTT auth
+0dba44c9b741217127db87a60053684803280903 5f2bef5077a8e150cc6b5d921e704ef29a7c4855 synnnq <rcc628@gmail.com> 1782471170 +0700	commit: refactor(db): prefix all tables/types/trigger-fn with anprc_ for shared DB
+5f2bef5077a8e150cc6b5d921e704ef29a7c4855 7b37ce884f762b730ad6550352e7d5f7ec3c9177 synnnq <rcc628@gmail.com> 1782471193 +0700	commit: docs: reflect anprc_ table/type rename + recent feature notes (EN+ID)
+7b37ce884f762b730ad6550352e7d5f7ec3c9177 c051c9edbacfc85b49ef95fa428b972a341c5c8a synnnq <rcc628@gmail.com> 1782471217 +0700	commit: feat(frontend): blacklist tab, direct gate via gpio_out, MQTT dual-layout
+c051c9edbacfc85b49ef95fa428b972a341c5c8a 24ae378fd69f5bb278604a8d9d01d11633da4e86 synnnq <rcc628@gmail.com> 1782475263 +0700	commit: fix: announceRecognition channelNo must be string, not int
+24ae378fd69f5bb278604a8d9d01d11633da4e86 98e2e8cdaa6c15fc993b98ac7f79acce4dbab8c3 synnnq <rcc628@gmail.com> 1782477863 +0700	commit: fix: drive voice/LED via 方控(FK) control card, configurable by setting
+98e2e8cdaa6c15fc993b98ac7f79acce4dbab8c3 ed46415a0d35426cf315efb3e127b7766aa0a256 synnnq <rcc628@gmail.com> 1782744502 +0700	commit: feat(road-blocker): replace Qigong REST with CORX MQTT relay; manual-only control
+ed46415a0d35426cf315efb3e127b7766aa0a256 e318858a94342772e2ecf70efa0be31e0fe73eba synnnq <rcc628@gmail.com> 1783006545 +0700	commit: fix(s300): match deployed vendor server API (paths, methods, envelope)
+e318858a94342772e2ecf70efa0be31e0fe73eba b856974706c2bf9575240b4d67f5430021ffda9f synnnq <rcc628@gmail.com> 1783006554 +0700	commit: chore(db): consolidate pending migrations into one additive file + prod checklist
+b856974706c2bf9575240b4d67f5430021ffda9f 64edf92a583da06f0648ba085f2c413d9f2e5326 synnnq <rcc628@gmail.com> 1783006560 +0700	commit: feat(road-blocker): editable relay config form on the Road Blocker page
+64edf92a583da06f0648ba085f2c413d9f2e5326 9e16d219891065dbdff470f53778b2c68c5847a5 synnnq <rcc628@gmail.com> 1783006567 +0700	commit: docs(s300): vendor platform migration guide + API test notes
+9e16d219891065dbdff470f53778b2c68c5847a5 df21ff47a560cae24ecb6ec5a2db6bef94eb1436 synnnq <rcc628@gmail.com> 1783072910 +0700	commit: fix(s300): audio-prompt channel path + configurable failure-audio URL
