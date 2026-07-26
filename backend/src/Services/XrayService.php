@@ -67,6 +67,11 @@ class XrayService {
             'error'         => $resp['ok'] ? null : $resp['error'],
         ]);
 
+        // Global logging: follow-up push (x-ray filled). Re-fetch the row so it
+        // carries the just-written receipt_result/status. Best-effort.
+        $fresh = Database::fetchOne('SELECT * FROM anprc_inspection_xray WHERE id = ?', [$xray['id']]);
+        if ($fresh) GlobalLog::enqueueXray($fresh);
+
         return $resp;
     }
 }

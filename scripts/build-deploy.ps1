@@ -4,8 +4,8 @@
 #   (optional) -OutDir D:\some\other\folder
 #
 # Output layout (default D:\Transforme\ANPR-deploy):
-#   webroot\        -> /var/www/html/anprc-sigap.dpr.go.id  (10.10.33.144)
-#   anpr_backend\   -> /var/www/html/anpr_backend            (10.10.33.144)
+#   webroot\        -> /var/www/anprc-sigap.dpr.go.id  (10.10.33.144)
+#   anpr_backend\   -> /var/www/anpr_backend            (10.10.33.144)
 #   worker\         -> 10.10.33.143 (runs as a service)
 #   PRODUCTION_CHECKLIST(.id).md + DEPLOY-README.txt
 #
@@ -56,8 +56,8 @@ Copy-Item (Join-Path $root 'docs\PRODUCTION_CHECKLIST.id.md') $OutDir
 ANPR production deploy bundle — generated $(Get-Date -Format 'yyyy-MM-dd HH:mm')
 
 Where each folder goes:
-  webroot\       -> 10.10.33.144:/var/www/html/anprc-sigap.dpr.go.id  (SPA docroot)
-  anpr_backend\  -> 10.10.33.144:/var/www/html/anpr_backend            (Alias /anpr_backend)
+  webroot\       -> 10.10.33.144:/var/www/anprc-sigap.dpr.go.id  (SPA docroot)
+  anpr_backend\  -> 10.10.33.144:/var/www/anpr_backend            (Alias /anpr_backend)
   worker\        -> 10.10.33.143 (worker.py runs as a service — restart it after copying)
 
 After copying, ON THE SERVERS:

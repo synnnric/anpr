@@ -272,6 +272,23 @@ CREATE INDEX IF NOT EXISTS idx_vstream_inspection ON anprc_inspection_video_stre
 CREATE INDEX IF NOT EXISTS idx_vstream_channel    ON anprc_inspection_video_streams (channel_no);
 
 -- ============================================
+-- global_log_queue — partner receiver push queue (gateCarEntry)
+-- ============================================
+CREATE TABLE IF NOT EXISTS anprc_global_log_queue (
+    id           BIGSERIAL PRIMARY KEY,
+    event_id     VARCHAR(96) NOT NULL,
+    phase        VARCHAR(16) NOT NULL,          -- initial | followup
+    payload      JSONB NOT NULL,
+    status       VARCHAR(16) NOT NULL DEFAULT 'pending',  -- pending | sent | failed
+    attempts     INT NOT NULL DEFAULT 0,
+    last_error   VARCHAR(512),
+    created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+    sent_at      TIMESTAMP,
+    UNIQUE (event_id, phase)
+);
+CREATE INDEX IF NOT EXISTS idx_glog_pending ON anprc_global_log_queue (id) WHERE status = 'pending';
+
+-- ============================================
 -- inspection_uvis
 -- ============================================
 CREATE TABLE IF NOT EXISTS anprc_inspection_uvis (
@@ -529,6 +546,15 @@ INSERT INTO anprc_settings (key_name, value) VALUES
     -- Window (seconds) for linking a scan to a recent inspection AND for
     -- inspection-free re-entry at the main lane after a PASSED scan.
     ('xray_clearance_window_s', '3600'),
+    -- Global logging to the partner receiver (gateCarEntry). enabled=0 until
+    -- the endpoint is confirmed; public_base_url makes upload paths absolute.
+    ('global_log_enabled', '0'),
+    ('global_log_url', 'http://10.10.33.143:5002/gateCarEntry'),
+    ('public_base_url', ''),
+    -- Backend's broker-health TCP probe target (Dashboard card). Default is
+    -- localhost; set to the broker host/raw-MQTT port on a split deployment.
+    ('broker_probe_host', '127.0.0.1'),
+    ('broker_probe_port', '1883'),
     -- Direct S300 /leave after a decision. ON: the real device needs it to reset
     -- and to emit the recorded video (vendor vehicleLeave → forwardVideoRecord).
     ('s300_auto_leave_enabled', '1'),

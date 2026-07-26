@@ -172,6 +172,13 @@ const id = {
   'mqttcfg.test': 'Tes Koneksi',
   'mqttcfg.test_ok': 'Berhasil tersambung — host, port, dan kredensial benar.',
   'mqttcfg.test_fail': 'Gagal: {msg}',
+  'set.group.globallog': 'Logging Global',
+  'set.f.global_log_enabled': 'Kirim log entri ke penerima mitra',
+  'set.f.global_log_enabled_hint': 'Saat aktif, setiap kendaraan masuk dikirim ke endpoint di bawah (gateCarEntry) via antrian + retry di worker.',
+  'set.f.global_log_url': 'URL penerima (gateCarEntry)',
+  'set.f.global_log_url_hint': 'Endpoint HTTP tim mitra, mis. http://10.10.33.143:5002/gateCarEntry.',
+  'set.f.public_base_url': 'Base URL publik (untuk link gambar)',
+  'set.f.public_base_url_hint': 'Dipakai agar URL gambar absolut & bisa diakses penerima, mis. https://anprc-sigap.dpr.go.id. Kosongkan untuk path relatif.',
   'set.group.blocker': 'Road Blocker',
   'set.f.blocker_relay_enabled': 'Relay aktif (perintah dikirim)',
   'set.f.blocker_relay_enabled_hint': 'Konfigurasi fallback global — jalur dengan konfigurasi relay per-channel (form Channel) memakai miliknya sendiri.',
@@ -244,6 +251,11 @@ const id = {
 
   // SSO blocked-access screen (shown when no ?username= param and no valid token)
   'sso.blocked.title': 'Akses Ditolak',
+  'login.subtitle': 'Masuk dengan akun SIGAP Anda',
+  'login.username': 'Nama Pengguna',
+  'login.password': 'Kata Sandi',
+  'login.submit': 'Masuk',
+  'login.failed': 'Gagal masuk',
   'sso.blocked.hint': 'Silakan akses platform ini melalui portal utama. Sesi tidak ditemukan.',
 
   // AuditLogPage
@@ -1084,6 +1096,13 @@ const en: Record<Key, string> = {
   'mqttcfg.test': 'Test Connection',
   'mqttcfg.test_ok': 'Connected successfully — host, port, and credentials are correct.',
   'mqttcfg.test_fail': 'Failed: {msg}',
+  'set.group.globallog': 'Global Logging',
+  'set.f.global_log_enabled': 'Push entry events to partner receiver',
+  'set.f.global_log_enabled_hint': 'When on, every vehicle entry is sent to the endpoint below (gateCarEntry) via a queue + worker retry.',
+  'set.f.global_log_url': 'Receiver URL (gateCarEntry)',
+  'set.f.global_log_url_hint': "The partner team's HTTP endpoint, e.g. http://10.10.33.143:5002/gateCarEntry.",
+  'set.f.public_base_url': 'Public base URL (for image links)',
+  'set.f.public_base_url_hint': 'Makes image URLs absolute + reachable by the receiver, e.g. https://anprc-sigap.dpr.go.id. Leave empty for relative paths.',
   'set.group.blocker': 'Road Blocker',
   'set.f.blocker_relay_enabled': 'Relay enabled (commands are sent)',
   'set.f.blocker_relay_enabled_hint': 'Global fallback config — lanes with per-channel relay config (Channel form) use their own.',
@@ -1156,6 +1175,11 @@ const en: Record<Key, string> = {
 
   // SSO blocked-access screen
   'sso.blocked.title': 'Access denied',
+  'login.subtitle': 'Sign in with your SIGAP account',
+  'login.username': 'Username',
+  'login.password': 'Password',
+  'login.submit': 'Sign In',
+  'login.failed': 'Login failed',
   'sso.blocked.hint': 'Please access this platform through the main portal. No active session was found.',
 
   // AuditLogPage

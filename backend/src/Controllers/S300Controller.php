@@ -124,6 +124,7 @@ class S300Controller {
                 'licensePlate' => $plate,
                 'xrayId' => (int)$clearance['id'],
             ]);
+            \App\Services\GlobalLog::enqueueEntry($id);
             Response::json([
                 'code' => 200,
                 'message' => $flagged
@@ -194,6 +195,7 @@ class S300Controller {
                 'inspectionId' => $id,
                 'licensePlate' => $plate,
             ]);
+            \App\Services\GlobalLog::enqueueEntry($id);
             Response::json([
                 'code' => 200,
                 'message' => 'blacklisted: inspection skipped, routed to x-ray',
@@ -257,6 +259,7 @@ class S300Controller {
                 'inspectionId' => $id,
                 'licensePlate' => $plate,
             ]);
+            \App\Services\GlobalLog::enqueueEntry($id);
             Response::json([
                 'code' => 200,
                 'message' => 'not whitelisted: inspection skipped, routed to x-ray',
@@ -318,6 +321,7 @@ class S300Controller {
                 'inspectionId' => $id,
                 'licensePlate' => $plate,
             ]);
+            \App\Services\GlobalLog::enqueueEntry($id);
             Response::json([
                 'code' => 200,
                 'message' => 'vip bypass',

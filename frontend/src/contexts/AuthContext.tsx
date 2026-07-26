@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { fetchMe, ssoLogin, type AuthUser } from '../services/authService';
+import { fetchMe, ssoLogin, passwordLogin, type AuthUser } from '../services/authService';
 
 type AuthStatus = 'unknown' | 'authenticated' | 'unauthenticated' | 'blocked';
 
@@ -8,6 +8,7 @@ interface AuthContextValue {
   token: string | null;
   status: AuthStatus;
   error: string | null;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -64,7 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (!token) {
-      setStatus('blocked');
+      // No SSO param and no stored token → show the login form.
+      setStatus('unauthenticated');
       return;
     }
 
@@ -75,23 +77,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem(TOKEN_KEY);
         setToken(null);
         setUser(null);
-        setStatus('blocked');
+        setStatus('unauthenticated');
       });
     return () => { cancelled = true; };
     // We intentionally only run this once on mount — `token` is read via the initializer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const login = useCallback(async (username: string, password: string) => {
+    const res = await passwordLogin(username.trim(), password);
+    localStorage.setItem(TOKEN_KEY, res.token);
+    setToken(res.token);
+    setUser(res.user);
+    setStatus('authenticated');
+    setError(null);
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setUser(null);
-    setStatus('blocked');
+    setStatus('unauthenticated');
     setError(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, status, error, logout }}>
+    <AuthContext.Provider value={{ user, token, status, error, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

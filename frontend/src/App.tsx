@@ -6,6 +6,7 @@ import { I18nProvider, useI18n } from './contexts/I18nContext';
 import Sidebar from './components/Sidebar';
 import StatusBar from './components/StatusBar';
 import OrphanExitAlert from './components/OrphanExitAlert';
+import LoginForm from './components/LoginForm';
 import RecognitionPage from './pages/RecognitionPage';
 import DeviceControlPage from './pages/DeviceControlPage';
 import WhitelistPage from './pages/WhitelistPage';
@@ -77,7 +78,10 @@ function AuthGate() {
       </div>
     );
   }
-  if (status === 'blocked' || status === 'unauthenticated') {
+  if (status === 'unauthenticated') {
+    return <LoginForm />;
+  }
+  if (status === 'blocked') {
     return <BlockedAccess />;
   }
 

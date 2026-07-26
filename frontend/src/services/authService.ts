@@ -47,5 +47,9 @@ async function getWithToken<T>(path: string, token: string): Promise<T> {
 export const ssoLogin = (username: string) =>
   postJson<LoginResponse>('/api/auth/sso', { username });
 
+// Username + password login against the shared SIGAP users table.
+export const passwordLogin = (username: string, password: string) =>
+  postJson<LoginResponse>('/api/auth/login', { username, password });
+
 export const fetchMe = (token: string) =>
   getWithToken<AuthUser>('/api/auth/me', token);

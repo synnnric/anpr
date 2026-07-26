@@ -97,6 +97,10 @@ class DecisionExecutor {
                 'status' => 'success',
             ]);
         }
+
+        // Global logging: initial push (xray null) now that the decision + images
+        // (vehicle/uvis/face) exist. Best-effort; no-op unless global_log_enabled.
+        GlobalLog::enqueueEntry((int)$inspection['id']);
     }
 
     /**

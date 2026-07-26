@@ -13,8 +13,16 @@ class DashboardController {
     private const STALE_INBOUND_SEC = 30;   // ANPR considered offline if no msg in this window
     private const STALE_TICK_SEC    = 15;   // Worker considered down if no cron tick recently
     private const BROKER_TIMEOUT_S  = 1.5;  // TCP probe budget for Mosquitto
+    // Broker probe host/port default to localhost:1883 (dev, broker on the same
+    // box). On prod the broker is on another host — override via the settings
+    // broker_probe_host / broker_probe_port (e.g. 10.10.33.143 / 8171).
     private const BROKER_HOST       = '127.0.0.1';
     private const BROKER_PORT       = 1883;
+
+    private static function setting(string $key, string $def): string {
+        $r = \App\Core\Database::fetchOne('SELECT value FROM anprc_settings WHERE key_name = ?', [$key]);
+        return ($r && $r['value'] !== '' && $r['value'] !== null) ? $r['value'] : $def;
+    }
 
     public function index(Request $req) {
         $nowEpoch = time();
@@ -46,10 +54,12 @@ class DashboardController {
         $dbLatencyMs = (int)((microtime(true) - $dbStart) * 1000);
         $dbVerShort = preg_match('/PostgreSQL\s+(\d+(\.\d+)?)/', $dbVer, $m) ? $m[1] : '';
 
-        // --- MQTT broker — direct TCP probe ---
+        // --- MQTT broker — direct TCP probe (host/port from settings) ---
+        $brokerHost = self::setting('broker_probe_host', self::BROKER_HOST);
+        $brokerPort = (int)self::setting('broker_probe_port', (string)self::BROKER_PORT);
         $brokerStart = microtime(true);
         $errno = 0; $errstr = '';
-        $sock = @fsockopen(self::BROKER_HOST, self::BROKER_PORT, $errno, $errstr, self::BROKER_TIMEOUT_S);
+        $sock = @fsockopen($brokerHost, $brokerPort, $errno, $errstr, self::BROKER_TIMEOUT_S);
         $brokerLatencyMs = (int)((microtime(true) - $brokerStart) * 1000);
         $brokerReachable = (bool)$sock;
         if ($sock) fclose($sock);

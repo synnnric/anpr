@@ -91,6 +91,89 @@ class AuthController {
         return ['code' => 200, 'message' => 'success', 'data' => ['user' => $user, 'token' => $token]];
     }
 
+    // POST /api/auth/login  body: { username, password }
+    //
+    // Authenticates against the SHARED SIGAP users table (public.users) that
+    // lives in the same db_sigap this backend already connects to. READ-ONLY on
+    // users/role — the only write is the anprc_users shadow row (our own table)
+    // so operation_log.actor_username, /me and role gates keep working.
+    public function login(Request $req) {
+        $body = $req->json();
+        $username = trim((string)($body['username'] ?? ''));
+        $password = (string)($body['password'] ?? '');
+        if ($username === '' || $password === '') {
+            Response::error('username and password are required', 400);
+            return null;
+        }
+
+        // READ-ONLY lookup of the existing SIGAP account.
+        $u = Database::fetchOne(
+            'SELECT u.id, u.username, u.password AS pw, u.is_suspend, r.nama_role
+             FROM users u LEFT JOIN role r ON r.id = u.role_id
+             WHERE u.username = ? AND u.deleted_at IS NULL
+             LIMIT 1',
+            [$username]
+        );
+        // Same generic message for "no such user" and "wrong password" (no user enumeration).
+        if (!$u || !password_verify($password, (string)$u['pw'])) {
+            Response::error('Invalid username or password', 401);
+            return null;
+        }
+        if ((int)($u['is_suspend'] ?? 0) !== 0) {
+            Response::error('Account is suspended', 403);
+            return null;
+        }
+
+        $role = self::mapSigapRole((string)($u['nama_role'] ?? ''));
+
+        // Upsert OUR shadow row (writes only to anprc_users). password_hash here
+        // is a throwaway — real auth is the SIGAP table above.
+        $existing = Database::fetchOne('SELECT id FROM anprc_users WHERE username = ?', [$username]);
+        if ($existing) {
+            $userId = (int)$existing['id'];
+            Database::update('anprc_users',
+                ['display_name' => $username, 'role' => $role, 'enabled' => 1],
+                'id = :uid', ['uid' => $userId]);
+        } else {
+            $userId = Database::insert('anprc_users', [
+                'username' => $username,
+                'display_name' => $username,
+                'role' => $role,
+                'enabled' => 1,
+                'password_hash' => password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT),
+            ]);
+        }
+
+        $token = self::issueToken($userId);
+        $user = Database::fetchOne(
+            'SELECT id, username, display_name, role, enabled, created_at FROM anprc_users WHERE id = ?',
+            [$userId]
+        );
+        InspectionService::logOperation([
+            'actor_username' => $username,
+            'action' => 'auth.login',
+            'request_payload' => ['username' => $username],
+            'response_payload' => ['role' => $role, 'sigap_role' => $u['nama_role'] ?? null],
+            'status' => 'success',
+        ]);
+        return ['code' => 200, 'message' => 'success', 'data' => ['user' => $user, 'token' => $token]];
+    }
+
+    /**
+     * Map a SIGAP role name (public.role.nama_role) to our 3-tier role.
+     * Conservative: only true super/admin/developer roles get ANPR 'admin';
+     * anything with 'viewer' is read-only; everyone else is 'operator'.
+     * Adjust these rules to taste — they decide CP privileges, nothing more.
+     */
+    private static function mapSigapRole(string $namaRole): string {
+        $r = strtolower(trim($namaRole));
+        if ($r === '') return 'operator';
+        // strpos (not str_contains) — keeps PHP 7.4 dev compatibility.
+        if (strpos($r, 'super') !== false || $r === 'admin' || strpos($r, 'developer') !== false) return 'admin';
+        if (strpos($r, 'viewer') !== false) return 'viewer';
+        return 'operator';
+    }
+
     public function me(Request $req) {
         $uid = self::userIdFromToken($req->header('authorization'));
         if (!$uid) { Response::error('Unauthenticated', 401); return null; }

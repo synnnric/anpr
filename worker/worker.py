@@ -73,6 +73,8 @@ class Config:
     dedupe_window_s: float = float(os.environ.get("DEDUPE_WINDOW_S", "10"))
     fallback_channel: str = os.environ.get("FALLBACK_CHANNEL", "RJ001")
     http_timeout_s: float = float(os.environ.get("HTTP_TIMEOUT_S", "10"))
+    # How often to drain the global-log queue (partner gateCarEntry push).
+    global_log_poll_s: float = float(os.environ.get("GLOBAL_LOG_POLL_S", "3"))
     # Singleton lock — first worker to claim this loopback port wins.
     # Any second instance gets OSError and exits with a friendly message.
     singleton_port: int = int(os.environ.get("WORKER_SINGLETON_PORT", "18923"))
@@ -206,6 +208,20 @@ def resolve_channel_for_sn(sn: str) -> dict | None:
             if c.get("anpr_device_sn") == sn:
                 return c
     return None
+
+
+def is_registered_sn(sn: str) -> bool:
+    """True if this SN belongs to one of our configured ANPR cameras. On the
+    shared DPR broker many unrelated devices publish; we ignore everything whose
+    SN is not a channel's anpr_device_sn. Fail-OPEN while channels haven't loaded
+    yet (empty list) so a transient channel-load failure doesn't blind the worker."""
+    if not sn:
+        return False
+    with State.lock:
+        chans = State.channels
+        if not chans:
+            return True  # not loaded yet — don't drop traffic
+        return any(c.get("anpr_device_sn") == sn for c in chans)
 
 
 def fallback_channel_no() -> str:
@@ -381,6 +397,38 @@ def cron_tick_loop() -> None:
         except Exception:  # noqa: BLE001
             log.exception("tick loop: error processing /api/cron/tick response")
         State.stop.wait(Config.tick_interval_s)
+
+
+def global_log_loop() -> None:
+    """Drain the global-log queue: POST each pending payload to the partner
+    receiver (gateCarEntry), then report sent/failed to the backend. The target
+    URL + enabled flag come from the backend (settings), so this is a no-op
+    until global_log_enabled=1."""
+    while not State.stop.is_set():
+        try:
+            res = backend_get("/api/global-log/pending?limit=20")
+            data = (res or {}).get("data") or {} if (res or {}).get("code") == 200 else {}
+            url = data.get("url")
+            if not data.get("enabled") or not url:
+                State.stop.wait(max(5.0, Config.global_log_poll_s))
+                continue
+            for item in (data.get("items") or []):
+                qid = item["id"]
+                resp = _http("POST", url, item.get("payload") or {})
+                # Success = the receiver's own resultCode 0 (or status 200).
+                ok = bool(resp) and (resp.get("resultCode") == 0 or resp.get("status") == 200)
+                if ok:
+                    backend_post(f"/api/global-log/{qid}/sent", {})
+                    log.info("global-log: sent %s/%s (queue#%s)",
+                             item.get("event_id"), item.get("phase"), qid)
+                else:
+                    err = "no response" if resp is None else json.dumps(resp)[:200]
+                    backend_post(f"/api/global-log/{qid}/failed", {"error": err})
+                    log.warning("global-log: FAILED %s/%s (queue#%s): %s",
+                                item.get("event_id"), item.get("phase"), qid, err)
+        except Exception as e:  # noqa: BLE001
+            log.warning("global_log_loop error: %s", e)
+        State.stop.wait(Config.global_log_poll_s)
 
 
 def run_supervised(fn, name: str, restart_delay_s: float = 3.0) -> None:
@@ -677,6 +725,11 @@ def on_message(client, userdata, msg):
         device_sn = parts[1] if len(parts) > 1 else ""
     message_name = parts[-1] if parts else ""
 
+    # Ignore devices that aren't ours. The shared broker carries many unrelated
+    # SNs; only messages from a configured ANPR camera get logged + processed.
+    if not is_registered_sn(device_sn):
+        return
+
     # 1) Fire-and-forget log to backend (every inbound message)
     try:
         payload_obj = json.loads(raw)
@@ -836,6 +889,7 @@ def main() -> int:
         (refresh_channels_loop, "channels-loop"),
         (cron_tick_loop,        "tick-loop"),
         (mqtt_outbound_loop,    "outbound-loop"),
+        (global_log_loop,       "global-log"),
         (blocker_heartbeat_loop, "blocker-hb"),
         (watchdog_loop,         "watchdog"),
     ]

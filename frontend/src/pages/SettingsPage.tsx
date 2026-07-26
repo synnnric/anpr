@@ -84,6 +84,15 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    titleKey: 'set.group.globallog',
+    icon: Radio,
+    fields: [
+      { key: 'global_log_enabled', type: 'toggle', def: '0', hint: true },
+      { key: 'global_log_url', type: 'text', def: 'http://10.10.33.143:5002/gateCarEntry', mono: true, hint: true },
+      { key: 'public_base_url', type: 'text', def: '', mono: true, hint: true },
+    ],
+  },
+  {
     // Global fallback relay config — lanes without per-channel relay config
     // (Channels section) fall back to these. Moved here from the Road Blocker
     // page so that page is control-only.

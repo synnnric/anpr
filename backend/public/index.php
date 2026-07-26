@@ -118,6 +118,12 @@ $router->post('/api/xray/room-come/{channelNo}', fn($r) => $xrayCtl->roomCome($r
 $router->post('/api/xray/{id}/review',  fn($r) => $xrayCtl->review($r));
 $router->post('/api/xray/{id}/resend',  fn($r) => $xrayCtl->resend($r));
 
+// === Global logging queue (worker drains -> partner gateCarEntry) ===
+$glog = new \App\Controllers\GlobalLogController();
+$router->get ('/api/global-log/pending',      fn($r) => $glog->pending($r));
+$router->post('/api/global-log/{id}/sent',     fn($r) => $glog->markSent($r));
+$router->post('/api/global-log/{id}/failed',   fn($r) => $glog->markFailed($r));
+
 // === Cron / timeout sweep ===
 $cron = new CronController();
 $router->post('/api/cron/tick', fn($r) => $cron->tick($r));
@@ -199,6 +205,7 @@ $router->get('/api/operation-log/facets', fn($r) => $ol->facets($r));
 // === Auth (SSO-only — login is brokered by the parent platform via ?username=) ===
 $auth = new AuthController();
 $router->post('/api/auth/sso', fn($r) => $auth->sso($r));
+$router->post('/api/auth/login', fn($r) => $auth->login($r));
 $router->get ('/api/auth/me',  fn($r) => $auth->me($r));
 
 // === Admin / testing utilities (gated to debug/dev_bypass) ===
